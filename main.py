@@ -11,7 +11,7 @@ def remove_temp_files():
         'backupdf2.csv', 'backupprova.csv', 'prova2.csv', 'plot.png',
         'prova.csv', 'prova1.csv', 'prova3.csv', 'output0_modified.csv',
         'output1_modified.csv', 'backupdf1.csv', 'backupdoasjfouieqhfiufho.csv',
-        'output0check.csv', 'output1check.csv', 'options_event.txt',
+        'output0check.csv', 'output1check.csv', 'options_event.txt', 
         'interactive_plot.txt'
     ]
     for file in files_to_remove:
