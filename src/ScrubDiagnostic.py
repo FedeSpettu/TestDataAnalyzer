@@ -5,7 +5,7 @@ from tkinter import filedialog
 import os
 from csv import reader
 import csv
-from DiagnosticData import DiagnosticaData
+from src.DiagnosticData import DiagnosticaData
 from enum import IntEnum
 import sys
 import re
