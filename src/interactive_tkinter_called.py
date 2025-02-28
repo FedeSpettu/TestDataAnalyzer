@@ -107,6 +107,79 @@ def _is_time_column(series):
     except Exception:
         return False
 
+# --- Paginated OptionMenu for Events ---
+class PaginatedOptionMenu:
+    def __init__(self, master, variable, options, command=None, page_size=10):
+        self.master = master
+        self.variable = variable  # This can be used externally if needed.
+        self.all_options = options  # full list of option strings
+        self.command = command
+        self.page_size = page_size
+        self.current_page = 0
+        # Create a dedicated StringVar for the OptionMenu display.
+        self.event_option_var = tk.StringVar(master)
+        self.event_option_var.set("Select Event")
+        # Create the OptionMenu with the options of the current page.
+        self.option_menu = tk.OptionMenu(
+            master,
+            self.event_option_var,
+            *self.get_current_page_options(),
+            command=self.on_select
+        )
+        self.option_menu.pack(fill=tk.X, padx=5, pady=2)
+        # Ensure the display remains "Select Event"
+        self.event_option_var.set("Select Event")
+
+    def get_current_page_options(self):
+        start = self.current_page * self.page_size
+        end = start + self.page_size
+        page_options = self.all_options[start:end]
+        if self.current_page > 0:
+            page_options.insert(0, "< Prev")
+        if end < len(self.all_options):
+            page_options.append("Next >")
+        return page_options
+
+    def on_select(self, value):
+        if value == "Next >":
+            self.current_page += 1
+            self.refresh_menu()
+            # Re-open the menu after refreshing
+            x = self.option_menu.winfo_rootx()
+            y = self.option_menu.winfo_rooty() + self.option_menu.winfo_height()
+            self.option_menu["menu"].post(x, y)
+        elif value == "< Prev":
+            self.current_page -= 1
+            self.refresh_menu()
+            x = self.option_menu.winfo_rootx()
+            y = self.option_menu.winfo_rooty() + self.option_menu.winfo_height()
+            self.option_menu["menu"].post(x, y)
+        else:
+            if self.command:
+                self.command(value)
+            # Always reset the display to "Select Event" after a normal selection.
+            self.event_option_var.set("Select Event")
+
+    def refresh_menu(self):
+        new_options = self.get_current_page_options()
+        menu = self.option_menu["menu"]
+        menu.delete(0, "end")
+        for option in new_options:
+            menu.add_command(
+                label=option,
+                command=tk._setit(self.event_option_var, option, self.on_select)
+            )
+        # Always reset display to "Select Event"
+        self.event_option_var.set("Select Event")
+
+    def update_options(self, new_options):
+        """Update the full list of options and reset pagination."""
+        self.all_options = new_options
+        self.current_page = 0
+        self.refresh_menu()
+
+
+
 # --- Main Interactive Plot Application ---
 class InteractivePlotApp(tk.Toplevel):
     def __init__(self, parent, df1, df2=None):
@@ -272,11 +345,10 @@ class InteractivePlotApp(tk.Toplevel):
         self.rem_thresh_btn.pack(side=tk.LEFT, padx=2)
 
         # Events.
-        #print(self.df1.columns)
-        #print(self.df1['Event'])
         if "Event" in self.df1.columns:
             event_frame = ttk.LabelFrame(right_frame, text="Events")
-            event_frame.pack(fill=tk.X, pady=2, padx=5)           
+            event_frame.pack(fill=tk.X, pady=2, padx=5)
+            
             ttk.Label(event_frame, text="Filter Events:").pack(padx=5, pady=2)
             self.event_filter_var = tk.StringVar()
             self.event_filter_entry = ttk.Entry(event_frame, textvariable=self.event_filter_var)
@@ -288,9 +360,9 @@ class InteractivePlotApp(tk.Toplevel):
             self.event_option_var = tk.StringVar(event_frame)
             self.event_option_var.set("Select Event")
             formatted_events = [f"Row {idx+2}: {ev}" for idx, ev in self.all_events]
-            print(formatted_events)
-            self.event_option = tk.OptionMenu(event_frame, self.event_option_var, *formatted_events, command=self.add_event_from_option)
-            self.event_option.pack(fill=tk.X, padx=5, pady=2)
+            self.event_menu = PaginatedOptionMenu(event_frame, self.event_option_var, formatted_events,
+                                                   command=self.add_event_from_option, page_size=10)
+            
             self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", command=self.remove_last_event)
             self.rem_event_btn.pack(fill=tk.X, padx=5, pady=2)
             self.create_event_btn = ttk.Button(event_frame, text="Create Custom Event", command=self.initiate_custom_event)
@@ -301,25 +373,21 @@ class InteractivePlotApp(tk.Toplevel):
             event_frame = ttk.LabelFrame(right_frame, text="Events")
             event_frame.pack(fill=tk.X, pady=2, padx=5)
             
-            # Since there are no events, self.all_events is empty.
             self.all_events = []
-            
-            # Use an OptionMenu even if it has no options.
-            # First, create a StringVar and set a placeholder.
-            self.event_option_var = tk.StringVar(event_frame)
-            self.event_option_var.set("Select Event")
-            
-            # Create the OptionMenu with at least one placeholder value
-            self.event_option = tk.OptionMenu(event_frame, self.event_option_var, "Select Event")
-            # Remove the placeholder so that the menu appears empty.
-            self.event_option["menu"].delete(0, "end")
-            self.event_option.pack(fill=tk.X, padx=5, pady=2)
             
             ttk.Label(event_frame, text="Filter Events:").pack(padx=5, pady=2)
             self.event_filter_var = tk.StringVar()
             self.event_filter_entry = ttk.Entry(event_frame, textvariable=self.event_filter_var)
             self.event_filter_entry.pack(fill=tk.X, padx=5, pady=2)
             self.event_filter_var.trace("w", lambda *args: self.filter_events())
+
+            self.event_option_var = tk.StringVar(event_frame)
+            self.event_option_var.set("Select Event")
+            
+            self.event_menu = PaginatedOptionMenu(event_frame, self.event_option_var, ["Select Event"],
+                                                   command=self.add_event_from_option, page_size=10)
+            
+            
             
             self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", 
                                             command=self.remove_last_event)
@@ -345,10 +413,7 @@ class InteractivePlotApp(tk.Toplevel):
     def filter_events(self):
         filter_text = self.event_filter_var.get().lower()
         filtered_events = [self.format_event(ev) for ev in self.all_events if filter_text in ev[1].lower()]
-        menu = self.event_option["menu"]
-        menu.delete(0, "end")
-        for ev_str in filtered_events:
-            menu.add_command(label=ev_str, command=lambda value=ev_str: self.add_event_from_option(value))
+        self.event_menu.update_options(filtered_events)
 
     def add_event_from_option(self, selected):
         if not selected or selected == "Select Event":
@@ -612,7 +677,6 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showinfo("Remove Event", "No events to remove.")
 
     def initiate_custom_event(self):
-        
         custom_event = askstring("Custom Event", "Enter custom event name:")
         if custom_event:
             self.custom_event_mode = True
@@ -633,10 +697,7 @@ class InteractivePlotApp(tk.Toplevel):
                 self.all_events.append(event_tuple)
                 # Update the OptionMenu with the new event
                 formatted_events = [self.format_event(ev) for ev in self.all_events]
-                menu = self.event_option["menu"]
-                menu.delete(0, "end")
-                for ev_str in formatted_events:
-                    menu.add_command(label=ev_str, command=lambda value=ev_str: self.add_event_from_option(value))
+                self.event_menu.update_options(formatted_events)
             if event_tuple not in self.selected_events:
                 self.selected_events.append(event_tuple)
             messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at time {self.df1.loc[idx, self.time_column]}")
