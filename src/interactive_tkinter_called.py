@@ -178,8 +178,6 @@ class PaginatedOptionMenu:
         self.current_page = 0
         self.refresh_menu()
 
-
-
 # --- Main Interactive Plot Application ---
 class InteractivePlotApp(tk.Toplevel):
     def __init__(self, parent, df1, df2=None):
@@ -387,8 +385,6 @@ class InteractivePlotApp(tk.Toplevel):
             self.event_menu = PaginatedOptionMenu(event_frame, self.event_option_var, ["Select Event"],
                                                    command=self.add_event_from_option, page_size=10)
             
-            
-            
             self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", 
                                             command=self.remove_last_event)
             self.rem_event_btn.pack(fill=tk.X, padx=5, pady=2)
@@ -443,6 +439,7 @@ class InteractivePlotApp(tk.Toplevel):
         self.ax.clear()
         self.xy_data = []
         common_ref = self.get_common_reference()
+        default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
         # Reset the lists of currently plotted columns.
         self.current_df1_plotted = []
@@ -454,44 +451,48 @@ class InteractivePlotApp(tk.Toplevel):
         elif self.data_operation == 'moving_average_time' and self.ma_window is not None:
             df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
             self.current_df1_plotted = df1_selected
-            for col in df1_selected:
+            for i, col in enumerate(df1_selected):
                 t = self.df1_time
                 series = self.df1[col].copy()
                 series.index = t
                 window_str = f"{self.ma_window}s"
                 ma = series.rolling(window=window_str, min_periods=1).mean().values
                 t_sec = (t - common_ref).dt.total_seconds().values
-                self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF1:{col}", color='purple')
+                color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
+                self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=color)
                 self.xy_data.extend(list(zip(t_sec, ma)))
             if self.df2 is not None and self.df2_listbox is not None:
                 df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
                 self.current_df2_plotted = df2_selected
-                for col in df2_selected:
+                for i, col in enumerate(df2_selected):
                     t = self.df2_time
                     series = self.df2[col].copy()
                     series.index = t
                     window_str = f"{self.ma_window}s"
                     ma = series.rolling(window=window_str, min_periods=1).mean().values
                     t_sec = (t - common_ref).dt.total_seconds().values
-                    self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF2:{col}", color='purple')
+                    color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
+                    self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=color)
                     self.xy_data.extend(list(zip(t_sec, ma)))
         elif self.data_operation == 'moving_average' and self.ma_window is not None:
             df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
             self.current_df1_plotted = df1_selected
-            for col in df1_selected:
+            for i, col in enumerate(df1_selected):
                 t = self.df1_time
                 t_sec = (t - common_ref).dt.total_seconds().values
                 ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean().values
-                self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF1:{col}", color='blue')
+                color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
+                self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF1:{col}", color=color)
                 self.xy_data.extend(list(zip(t_sec, ma)))
             if self.df2 is not None and self.df2_listbox is not None:
                 df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
                 self.current_df2_plotted = df2_selected
-                for col in df2_selected:
+                for i, col in enumerate(df2_selected):
                     t = self.df2_time
                     t_sec = (t - common_ref).dt.total_seconds().values
                     ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean().values
-                    self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF2:{col}", color='blue')
+                    color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
+                    self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF2:{col}", color=color)
                     self.xy_data.extend(list(zip(t_sec, ma)))
         else:
             df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
