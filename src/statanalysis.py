@@ -41,6 +41,8 @@ def reset_gui2( elements):
         'File2': []
     }
     global folder_path
+    global files_selection
+    files_selection.clear()
     folder_path=[]
     global output_path
     output_path=''
@@ -363,20 +365,6 @@ class LoadingScreen_mult:
                     self.loading = False
                     self.loading_label.destroy()
                     root.withdraw()
-                    # if os.path.isfile('options_multi.txt'):
-                    #     os.remove('options_multi.txt')
-                    # if os.path.isfile('options.txt'):
-                    #     os.remove('options.txt')
-                    # if os.path.isfile('options1.txt'):
-                    #     os.remove('options1.txt')
-                    # if os.path.isfile('options2.txt'):    
-                    #     os.remove('options2.txt')
-                    # if os.path.isfile('output0.csv'):
-                    #     os.remove('output0.csv')
-                    # if os.path.isfile('output1.csv'):
-                    #     os.remove('output1.csv')
-                    # if os.path.isfile('options.txt'):
-                    #     os.remove('options.txt')
                     if os.path.isfile('check.csv'):
                         os.remove('check.csv')
                     if os.path.isfile('data.csv'):
@@ -514,16 +502,7 @@ def remove_spaces_and_replace_with_comma(input_file_path):
 
                     outfile.write(line_modified)
                     additional_outfile.write(line_modified)
-        # file_name, file_extension = os.path.splitext(input_file_path)
-        # output_file_path = f"{file_name}_modified.csv"
-        # additional_output_file_path = 'C:\src\your_additional_output_file.csv'
-        # with open(input_file_path, 'r', newline='') as infile:
-        #     with open(output_file_path, 'w', newline='') as outfile, open(additional_output_file_path, 'w', newline='') as additional_outfile:
-        #         for line in infile:
-        #             # Remove spaces and replace with a comma
-        #             line = line.replace(' ', ',')
-        #             outfile.write(line)
-        #             additional_outfile.write(line)
+        
     except Exception as e:
         
         root=tk.Tk()
@@ -664,6 +643,7 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
     global output_path
     global currentpage
     global output_file
+    global files_selection
     #try:
     if os.path.isfile('options1.txt'):
         lines = []
@@ -709,7 +689,7 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
                 cell = ws.cell(row=start_row, column=2, value=str(files_folder2))
             start_row += 1
         wb.save(output_file)
-
+        
         delimiter1 = auto_detect_delimiter('output0.csv') #auto detect delimiter of the first file
         delimiter2 = auto_detect_delimiter('output1.csv') #auto detect delimiter of the second file
         df1 = pd.read_csv('output0.csv', sep=delimiter1, encoding='UTF-8', engine='python')
@@ -2251,7 +2231,11 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
             if os.path.isfile('backupprova.csv'):    
                 os.remove('backupprova.csv')
             if os.path.isfile('prova2.csv'):
-                os.remove('prova2.csv')         
+                os.remove('prova2.csv')   
+            if os.path.isfile('output0.csv'):
+                os.remove('output0.csv')    
+            if os.path.isfile('output1.csv'):
+                os.remove('output1.csv')   
             if os.path.isfile('output0_modified.csv'):
                 os.remove('output0_modified.csv')
             if os.path.isfile('output1_modified.csv'):
@@ -2274,7 +2258,16 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
                 os.remove('output1check.csv')
             if os.path.isfile('your_additional_output_file.csv'):
                     os.remove('your_additional_output_file.csv')
-            messagebox.showinfo("Done", "The analysis have been saved", parent=root)    
+            messagebox.showinfo("Done", "The analysis have been saved", parent=root)  
+            print(files_selection[0])
+            if os.path.isfile(files_selection[0]):    
+                bkdf0=pd.read_csv(files_selection[0], sep=',', engine='python' , encoding='latin1')
+                bkdf0.to_csv('output0.csv', index=False)
+
+            if select==2 and os.path.isfile(files_selection[1]):   
+                bkdf1=pd.read_csv(files_selection[1], sep=',', engine='python', encoding='latin1')
+                bkdf1.to_csv('output1.csv', index=False)  
+            
             print(enable_plot)
             book = openpyxl.load_workbook(output_file)
             sheet_name = 'Data' + str(currentpage)  # Replace with the actual sheet name.

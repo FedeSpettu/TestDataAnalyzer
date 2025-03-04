@@ -317,7 +317,8 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
     try:
         global output_path
         directory_path = folder_path + '/' + file_path
- 
+        print(directory_path)
+        
         # Regular expression pattern to match 'diagnostic' in a file name
         pattern = re.compile(r'DiagnosticLog', re.IGNORECASE)
  
@@ -325,20 +326,15 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         file_path = folder_path + '\\' + file_path
         file_ext = file_path.split('.')[-1]
  
-        # if pattern.search(directory_path):
-        #     output_name=sd.scrub_diagnostic(directory_path)
-        #     file_path=output_name
-           
-        # elif file_ext == 'json':
-        #     output_name=sj.scrub_json(directory_path)
-        #     file_path=output_name
         output_name=sd.scrub_diagnostic(directory_path)
         if output_name:
             file_path=output_name
+            
            
         if output_name == False:
             output_name=sj.scrub_json(directory_path)
- 
+            
+
         if output_name:  
             file_path=output_name
  
@@ -350,6 +346,8 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         keep, keep2 = find_data(file_path)
         delimiter = auto_detect_delimiter(file_path)
         pattern = re.compile(delimiter)  # Compila una volta la regex
+        files_selection.append(file_path)
+        print("File selection:", files_selection)
         with open(file_path, 'r') as f:
             rows = [pattern.split(line.strip()) for line in f]
            
@@ -375,7 +373,7 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         messagebox.showerror("Critical Error", str(e.args))
         loading_label.destroy()
     
-    column_selection(output,  drop2, clicked2, file_list2, entry2, loading_label, root)
+    column_selection(output,  drop2, clicked2, file_list2, entry2, loading_label, root, k)
 
 def truncate_text(text, max_length=30):
     """Returns the text truncated to max_length characters (including an ellipsis) if needed."""
@@ -527,7 +525,7 @@ def remove_spaces_and_replace_with_comma(input_file_path):
         
         
 # Load columns headers into dropdown 
-def column_selection(path,  drop2, clicked2, file_list2, entry2, loading_label, root):
+def column_selection(path,  drop2, clicked2, file_list2, entry2, loading_label, root, k):
     global checktrace
     global headers
     global file_ext
@@ -570,14 +568,14 @@ def column_selection(path,  drop2, clicked2, file_list2, entry2, loading_label, 
             while not any(headers):
                 
                 headers = next(reader)
-    update_option_column(headers, drop2, clicked2, file_list2, entry2)
+    update_option_column(headers, drop2, clicked2, file_list2, entry2, k)
     loading_label.destroy()
     root.withdraw()
     time.sleep(0.2)
     messagebox.showinfo("Done", "Columns have been uploaded", parent=root) 
     
     
-def update_option_column(first_row, drop, clicked, file_list2, entry2):
+def update_option_column(first_row, drop, clicked, file_list2, entry2, k):
     try:
         global headers
         # Imposta first_row come headers globali
@@ -604,12 +602,12 @@ def update_option_column(first_row, drop, clicked, file_list2, entry2):
             end = start + ITEMS_PER_PAGE
             # Ottieni la fetta corrente delle opzioni filtrate
             current_slice = filtered_options[start:end]
-
+            
             # Aggiungi i comandi per le opzioni della pagina corrente
             for file_name in current_slice:
                 menu.add_command(
                     label=file_name,
-                    command=lambda value=file_name: updatelist(value, file_list2)
+                    command=lambda value=file_name: updatelist(value, file_list2, k)
                 )
             # Se ci sono altre opzioni dopo, aggiungi "More >>"
             if end < len(filtered_options):
@@ -641,9 +639,9 @@ def update_option_column(first_row, drop, clicked, file_list2, entry2):
         messagebox.showerror("Critical Error", str(e.args))
     
         
-def updatelist(clicked, file_list2,*args):
+def updatelist(clicked, file_list2, k, *args):
     try:
-        global k
+        #global k
         global selection
         file_list2.insert(tk.END, clicked)
         if k == 0:

@@ -160,21 +160,25 @@ def remove_event(file_list, file_txt, drop):
         with open(file_txt, "w") as file:
             file.writelines(updated_lines)
 
-def remove_selected(file_list, file_txt):
+def remove_selected(file_list, file_txt, file_key):
     global selection
+    # Get the index and value of the currently selected item.
     selected_index = file_list.curselection()
     if selected_index:
         selected_item = file_list.get(selected_index)
         file_list.delete(selected_index)
-        for key, value_list in selection.items():
-            if selected_item in value_list:
-                value_list.remove(selected_item)
+        # Remove the item from the correct list in the selection dictionary.
+        if file_key in selection and selected_item in selection[file_key]:
+            selection[file_key].remove(selected_item)
+        # Read all lines from the file.
         with open(file_txt, "r") as file:
             lines = file.readlines()
+        # Rewrite the file, omitting the line that exactly matches the selected item.
         with open(file_txt, "w") as file:
             for line in lines:
                 if line.strip() != selected_item:
                     file.write(line)
+
 
 
 # Global dictionary to hold button references if needed
@@ -378,7 +382,8 @@ def populate_scrollable_frame(main_frame):
         file1_column_option,
         file1_column_option_var,
         file1_listbox,
-        file1_column_filter_entry
+        file1_column_filter_entry,
+        k=0
     ))
     file1_column_option_var = tk.StringVar(file1_column_frame)
     file1_column_option_var.set("Select Column")
@@ -399,7 +404,7 @@ def populate_scrollable_frame(main_frame):
     
     file1_listbox = tk.Listbox(file1_frame, height=4, width=30)
     file1_listbox.grid(row=4, column=1, columnspan=1, padx=10, pady=5, sticky="ew")
-    file1_listbox.bind("<Button-1>", lambda event: remove_selected(file1_listbox, 'options1.txt'))
+    file1_listbox.bind("<Button-1>", lambda event: remove_selected(file1_listbox, 'options1.txt', 'File1'))
 
     # ---- File 2 Selection Area (Optional) ----
     file2_frame = ctk.CTkFrame(input_frame, fg_color="#4E4E4E", corner_radius=10,
@@ -470,7 +475,8 @@ def populate_scrollable_frame(main_frame):
         file2_column_option,
         file2_column_option_var,
         file2_listbox,
-        file2_column_filter_entry
+        file2_column_filter_entry,
+        k=1
     ))
     file2_column_option_var = tk.StringVar(file2_column_frame)
     file2_column_option_var.set("Select Column")
@@ -484,7 +490,7 @@ def populate_scrollable_frame(main_frame):
     
     file2_listbox = tk.Listbox(file2_frame, height=4, width=30)
     file2_listbox.grid(row=4, column=1, columnspan=1, padx=10, pady=5, sticky="ew")
-    file2_listbox.bind("<Button-1>", lambda event: remove_selected(file2_listbox, 'options2.txt'))
+    file2_listbox.bind("<Button-1>", lambda event: remove_selected(file2_listbox, 'options2.txt', 'File2'))
     def toggle_file2_buttons():
     
         state = "normal" if file2_enable_switch.get() else "disabled"
@@ -839,8 +845,7 @@ def populate_scrollable_frame(main_frame):
         
         # 2. Reset global or shared variables
         global selection_event  # e.g., your selection list used elsewhere
-        selection_event = []
-
+        selection_event = []       
         # 3. Reset each widget passed in the 'elements' list
         for element in elements:
             # Clear Entry widgets

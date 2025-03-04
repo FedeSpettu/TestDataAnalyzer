@@ -7,6 +7,7 @@ selection = {
     'File2': []
 }
 selection_event = []
+files_selection = []
 folder_path=[]
 output_path=''
 output_file=''
