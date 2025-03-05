@@ -2301,7 +2301,12 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
                         else:
                             launch_interactive_plot(root,df1, df2)
                     else:
-                        launch_interactive_plot(root, df)
+                        if 'df' in locals() or 'df' in globals():
+                            launch_interactive_plot(root, df)
+                        elif 'df0' in locals() or 'df0' in globals():
+                            launch_interactive_plot(root, df0)
+                        else:
+                            launch_interactive_plot(root, df1)
     # except Exception as e:
     #     root=tk.Tk()
     #     root.withdraw()
