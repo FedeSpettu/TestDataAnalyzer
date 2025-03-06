@@ -364,7 +364,10 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
                 df1 = pd.DataFrame(data_to_save)
            
                 df = pd.concat([df, df1], axis=1)
-        output='output'+str(k)+'.csv'    
+        output='output'+str(k)+'.csv' 
+        #print(output)
+        #print(df.columns)
+        
         df.to_csv(output, index=False, header=False)
            
     except Exception as e:
@@ -529,6 +532,13 @@ def column_selection(path,  drop2, clicked2, file_list2, entry2, loading_label, 
     global checktrace
     global headers
     global file_ext
+    if path == "output1.csv":
+        # Load the CSV into a DataFrame
+        df = pd.read_csv(path, sep=',', encoding='latin-1', engine='python')
+        # Check if "Event" column exists and drop it
+        if "Event" in df.columns:
+            df = df.drop(columns=["Event"]) 
+            df.to_csv(path, index=False)
     try:      
         if file_ext == 'log':
             remove_spaces_and_replace_with_comma(path)
@@ -568,10 +578,12 @@ def column_selection(path,  drop2, clicked2, file_list2, entry2, loading_label, 
             while not any(headers):
                 
                 headers = next(reader)
+     
     update_option_column(headers, drop2, clicked2, file_list2, entry2, k)
     loading_label.destroy()
     root.withdraw()
     time.sleep(0.2)
+    
     messagebox.showinfo("Done", "Columns have been uploaded", parent=root) 
     
     

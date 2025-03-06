@@ -90,7 +90,7 @@ class DiagnosticaData:
         # build dictionary to fill
         self.Params=[
         #Time
-        ("RelTime",[[], 0]),
+        ("TimeDiagnostic",[[], 0]),
         #Event
         ("Event",[[], 0]),
         ("ArterialInletPressureSensor",[[],Numeric]),

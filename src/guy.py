@@ -222,7 +222,7 @@ def create_gui(root):
 
 def populate_scrollable_frame(main_frame):
     # Common values for option menus
-    units = ['N/A', 'Pa', 'bar', 'mmHg', 'Torr', 'mm', 'cm', 'm', 'km',
+    units = ['N/A', 'mS/cm','ml/min', 'L/min', 'L/h', 'ml/sec', 'Pa', 'bar', 'mmHg', 'Torr', 'mm', 'cm', 'm', 'km',
              'in', 'ft', 'yd', 'mi', 'm2', 'km2', 'ha', 'ac', 'L', 'mL',
              'g', 'kg', 's', 'min', 'h', '°C', '°F', 'rad', '°', 'Hz', 'V', 'A', 'W']
     conditions = ['x<Limit1', 'x>Limit1', 'Limit1<x<Limit2', 'x<Limit1 or x>Limit2',
@@ -231,6 +231,7 @@ def populate_scrollable_frame(main_frame):
     first_row = []
     global buttons
     global clean_paths
+    global status
     output_file = None
     output_path = None
     startup=True
@@ -240,6 +241,7 @@ def populate_scrollable_frame(main_frame):
     output_frame = ctk.CTkFrame(main_frame, fg_color="#3B3B3B", corner_radius=10,
                                 border_width=2, border_color="#FFD700")
     output_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+    output_frame.grid_columnconfigure(1, weight=3)
     output_frame.grid_columnconfigure(2, weight=2)
     output_label = ctk.CTkLabel(output_frame, text="Step 1: Output Selection",
                                 font=ctk.CTkFont(size=16, weight="bold"))
@@ -250,6 +252,8 @@ def populate_scrollable_frame(main_frame):
                                      width=80,
                                      command=lambda: call_reset(elements))
     clear_all_button.grid(row=1, column=2, padx=10, pady=5, sticky="e")
+    label_status=ctk.CTkLabel(output_frame, text="Status: "+str(status))
+    label_status.grid(row=0, column=2, padx=10, pady=5, sticky="w")
     output_folder_button = ctk.CTkButton(output_frame, text="Select Output Folder",
                                          command=lambda: st.select_output(output_folder_label, clean_paths,
         output_folder_label,

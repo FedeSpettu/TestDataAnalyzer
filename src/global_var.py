@@ -12,7 +12,7 @@ folder_path=[]
 output_path=''
 output_file=''
 files=[]
-
+status='Ready'
 # Track which folder is currently selected
 k=-1
 z=0

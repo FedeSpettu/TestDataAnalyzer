@@ -301,6 +301,7 @@ import queue
 from PIL import Image, ImageTk, ImageSequence
 
 class LoadingScreen_mult:
+    global status
     def __init__(self, root, minimum, maximum, threshold, checkbox, checkbox1,var_unit,checkbox2,text_input4, text_input5,clickedfolder2,clickedfolder1, var_unit3, var_unit2, i, n_files, clean_paths, drop1, drop2, file_list2, checkbox_var3, clickedeventstart,clickedeventend, enable_plot):
         self.root = root
         screen_width = self.root.winfo_screenwidth()
@@ -338,6 +339,7 @@ class LoadingScreen_mult:
 
     def load_big_file_mult(self,root, minimum, maximum, threshold, checkbox, checkbox1,var_unit,checkbox2,text_input4, text_input5,clickedfolder2,clickedfolder1, var_unit3, var_unit2, i, n_files, clean_paths, drop1, drop2, file_list2, checkbox_var3, clickedeventstart,clickedeventend, enable_plot):
         i=0
+        global status
         try:
             while self.loading:
                 # Simulate loading a big file (replace this with your actual file loading logic)
@@ -358,6 +360,7 @@ class LoadingScreen_mult:
                 filename = os.path.basename(path)
                 clickedfolder1.set(filename)
                 dl.load_data_mult(path)
+                status='Analyzing file: '+ i  
                 analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,checkbox2,text_input4, text_input5,clickedfolder2,clickedfolder1, var_unit3, var_unit2, self.loading_label, root, i, n_files, checkbox_var3, clickedeventstart,clickedeventend, enable_plot)
                 i=i+1
                 if i==n_files:

@@ -87,7 +87,7 @@ PREDEFINED_ENUMS = {
 }
 
 PREFILLED_COLUMN =[
-    ('Time','0'),
+    ('TimeSniffer','0'),
     ('Event',''),
 ]
 
@@ -218,11 +218,11 @@ def scrub_json(file_name):
             file.write('\n')
 
             for data in dataList:
-                if dataToPlot['Time'] != data.time:
+                if dataToPlot['TimeSniffer'] != data.time:
                     #Print dataToPlot to new line
                     file.write(','.join(value for value in dataToPlot.values()))
                     file.write('\n')
-                    dataToPlot['Time'] = data.time
+                    dataToPlot['TimeSniffer'] = data.time
 
                 #Update data to plot
                 dataToPlot[data.name] = data.value
