@@ -360,7 +360,8 @@ class LoadingScreen_mult:
                 filename = os.path.basename(path)
                 clickedfolder1.set(filename)
                 dl.load_data_mult(path)
-                status='Analyzing file: '+ i  
+                status='Analyzing file: '+ str(i)
+                print(status)
                 analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,checkbox2,text_input4, text_input5,clickedfolder2,clickedfolder1, var_unit3, var_unit2, self.loading_label, root, i, n_files, checkbox_var3, clickedeventstart,clickedeventend, enable_plot)
                 i=i+1
                 if i==n_files:
@@ -1090,7 +1091,7 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
         start_row = ws.max_row + 1
         for item in files_folder1:
             if item:
-                cell = ws.cell(row=start_row, column=1, value=item)
+                cell = ws.cell(row=start_row, column=1, value="Data"+str(start_row-1)+item)
             start_row += 1
         wb.save(output_file)
 
@@ -1122,6 +1123,7 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
 
                         # Check if the value is non-numeric
                         if not pd.api.types.is_numeric_dtype(df1.at[i, col]):
+                            
                             # If the value is non-numeric, replace it with NaN
                             df1.at[i, col] = np.nan
 
@@ -1174,6 +1176,8 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
 
                         # Check if the value is non-numeric
                         if not pd.api.types.is_numeric_dtype(df1.at[i, col]):
+                            print('non numeric')
+                            
                             # If the value is non-numeric, replace it with NaN
                             df1.at[i, col] = np.nan
 
@@ -1240,8 +1244,8 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
 
             format_date='%H:%M:%S'
             df1 = remove_special_characters(df1)
-            print(df1)
-            print('prob qui')
+            # print(df1)
+            # print('prob qui')
             df1.to_csv('output0.csv', index=False, encoding='UTF-8')
 
         for col in df1.columns:
@@ -1255,7 +1259,8 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
 
                         # Check if the value is non-numeric
                         if not pd.api.types.is_numeric_dtype(df1.at[i, col]):
-                            #print(f"Non-numeric value found at index {i}.")
+                            print(f"Non-numeric value found at index {i}.")
+                            
                             # If the value is non-numeric, replace it with NaN
                             df1.at[i, col] = np.nan
 
