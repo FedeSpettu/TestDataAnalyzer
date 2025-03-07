@@ -14,7 +14,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import PatternFill
 from src.global_var import *
 #from src.loading import *
-from .usefull_functions import auto_detect_delimiter, is_date_column, remove_special_characters, is_date_column2, remove_special_characters_from_list
+from .usefull_functions import auto_detect_delimiter, is_date_column, remove_special_characters, is_date_column2, remove_special_characters_from_list, apply_formulas_to_column, convert_to_relative_time, align_dataframes
 from tkinter import messagebox as mbox
 import sys
 from tkinter import Tk, Checkbutton, Button, Scrollbar, messagebox
@@ -235,64 +235,7 @@ def select_output(folder_label3, clean_paths,
         error_message = e.args
         messagebox.showerror("Critical Error", str(error_message), parent=root)
 
-def convert_to_relative_time(ms_col, reference_time):
-    try:
-    # Convert column to pandas Series
-        ms_series = pd.Series(ms_col)
 
-        # Get reference time as timedelta
-        ref_td = pd.to_timedelta(reference_time)
-
-        # Convert column to timedelta and add reference time
-        relative_td = ref_td + pd.to_timedelta(ms_series, unit='ms')
-
-        # Convert timedelta to string 
-        relative_strings = relative_td.astype(str)
-
-        return relative_strings
-    except Exception as e:
-        root=tk.Tk()
-
-        root.withdraw()
-        print(e)
-        error_message = e.args
-        messagebox.showerror("Critical Error", str(error_message))
-
-def apply_formulas_to_column(df,reftime,column_date):
-    # Validate input column is numeric
-    try:
-        
-        time_column = df[column_date]
-
-            # Make sure column is numeric before time conversion 
-        df = df.copy()
-        time_column = pd.to_numeric(time_column, errors='coerce')
-    
-        reftime_str = reftime.strftime('%H:%M:%S')
-        reference_timedelta = pd.to_timedelta(reftime_str)
-        
-        if not isinstance(time_column[0], (int, float, str)):
-            relative_times = convert_to_relative_time(df[column_date], reference_timedelta)
-        
-            df[column_date] = relative_times.apply(lambda x: str(x).split()[-1])
-
-            return df
-            #raise TypeError("Input column must be numeric or string")
-        # Add reference time to column
-        time_column = pd.to_timedelta(time_column, unit='s') + reference_timedelta
-
-        # Round to seconds and convert to string
-        time_column = time_column.dt.round('1s').apply(lambda x: str(x).split()[-1])
-        # Replace column in copied DataFrame
-        df[column_date] = time_column
-
-        return df
-    except Exception as e:
-        root=tk.Tk()
-        root.withdraw()
-        print(e)
-        error_message = e.args
-        messagebox.showerror("Critical Error", str(error_message))
 
 # Main analysis function
 
@@ -537,111 +480,6 @@ def insert_seconds_progressively(time_column, seconds_to_start, seconds_to_add):
     seconds_to_start += seconds_to_add
 
   return time_column
-
-
-def align_dataframes(df1, df2, time_column1, time_column2):
-    import pandas as pd
-
-def align_dataframes(df1, df2, time_column1, time_column2):
-    """
-    Allinea solo l'inizio e la fine dei due DataFrame ad un tempo comune (global_start e global_end)
-    aggiungendo delle righe di zero padding (a cadenza di 1 secondo) solo per coprire le parti mancanti.
-    
-    Ad esempio, se per df1:
-      - start1 > global_start: viene creato un padding all'inizio (da global_start fino a start1 - 1 sec)
-      - end1 < global_end:  viene creato un padding finale (da end1 + 1 sec fino a global_end)
-    
-    Lo stesso per df2.  
-    I due DataFrame mantengono le loro colonne temporali indipendenti, e i nuovi timestamp
-    sono formattati come hh:mm:ss.
-    
-    Parameters:
-      df1, df2          : DataFrame da allineare
-      time_column1      : nome della colonna temporale in df1
-      time_column2      : nome della colonna temporale in df2
-      
-    Returns:
-      tuple: (df1_allineato, df2_allineato)
-    """
-    # Creiamo copie dei DataFrame originali
-    df1 = df1.copy()
-    df2 = df2.copy()
-    
-    # Converte le colonne temporali in datetime
-    df1[time_column1] = pd.to_datetime(df1[time_column1])
-    df2[time_column2] = pd.to_datetime(df2[time_column2])
-    
-    # Calcola gli estremi (start ed end) per ciascun DataFrame
-    start1 = df1[time_column1].min()
-    end1   = df1[time_column1].max()
-    start2 = df2[time_column2].min()
-    end2   = df2[time_column2].max()
-    
-    # Determina il global start ed end (minimo dei due start, massimo dei due end)
-    global_start = min(start1, start2)
-    global_end   = max(end1, end2)
-    delta_sec=(start1 - start2).total_seconds()
-
-    # Identifica le colonne dei valori (cioè tutte quelle tranne la colonna temporale)
-    value_columns1 = [col for col in df1.columns if col != time_column1]
-    value_columns2 = [col for col in df2.columns if col != time_column2]
-    
-    # ----- Padding per df1 -----
-    df1_list = []
-    
-    # Se il primo timestamp di df1 è successivo a global_start, crea il padding iniziale
-    if start1 > global_start:
-        pad_index = pd.date_range(start=global_start, end=start1 - pd.Timedelta(seconds=1), freq='s')
-        pad_df1 = pd.DataFrame({time_column1: pad_index})
-        for col in value_columns1:
-            pad_df1[col] = 0
-        df1_list.append(pad_df1)
-    
-    # Aggiungi il DataFrame originale
-    df1_list.append(df1)
-    
-    # Se l'ultimo timestamp di df1 è precedente a global_end, crea il padding finale
-    if end1 < global_end:
-        pad_index = pd.date_range(start=end1 + pd.Timedelta(seconds=1), end=global_end, freq='s')
-        pad_df1_end = pd.DataFrame({time_column1: pad_index})
-        for col in value_columns1:
-            pad_df1_end[col] = 0
-        df1_list.append(pad_df1_end)
-    
-    # Concatena le parti e riordina in base alla colonna temporale
-    df1_aligned = pd.concat(df1_list, ignore_index=True)
-    df1_aligned = df1_aligned.sort_values(by=time_column1).reset_index(drop=True)
-    
-    # ----- Padding per df2 -----
-    df2_list = []
-    
-    if start2 > global_start:
-        pad_index = pd.date_range(start=global_start, end=start2 - pd.Timedelta(seconds=1), freq='s')
-        pad_df2 = pd.DataFrame({time_column2: pad_index})
-        for col in value_columns2:
-            pad_df2[col] = 0
-        df2_list.append(pad_df2)
-    
-    df2_list.append(df2)
-    
-    if end2 < global_end:
-        pad_index = pd.date_range(start=end2 + pd.Timedelta(seconds=1), end=global_end, freq='s')
-        pad_df2_end = pd.DataFrame({time_column2: pad_index})
-        for col in value_columns2:
-            pad_df2_end[col] = 0
-        df2_list.append(pad_df2_end)
-    
-    df2_aligned = pd.concat(df2_list, ignore_index=True)
-    df2_aligned = df2_aligned.sort_values(by=time_column2).reset_index(drop=True)
-    
-    # Formatto le colonne dei tempi in hh:mm:ss
-    df1_aligned[time_column1] = df1_aligned[time_column1].dt.strftime('%H:%M:%S')
-    df2_aligned[time_column2] = df2_aligned[time_column2].dt.strftime('%H:%M:%S')
-    
-    return df1_aligned, df2_aligned, delta_sec
-
-
-
 
 def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,checkbox2,text_input4, text_input5,clickedfolder2,clickedfolder1, var_unit3, var_unit2, loading_label, root,itera_tion, n_files, checkbox_var3, clickedeventstart,clickedeventend, enable_plot):
     global output_path

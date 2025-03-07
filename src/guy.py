@@ -10,6 +10,7 @@ from src.global_var import *
 from PIL import Image, ImageTk, ImageSequence
 from src.usefull_functions import auto_detect_delimiter
 import time
+from src.interactive_tkinter_called import rapid_analysis
 
 
 
@@ -59,7 +60,7 @@ def checkbox_checked(checkbox_var3, drop_start, drop_end, file_list6, file_list5
     search_term6 = entry6.get().lower()
     if checkbox_var3.get():
         delimiter = auto_detect_delimiter('output0.csv')
-        df = pd.read_csv('output0.csv', sep=delimiter, encoding='UTF-8')
+        df = pd.read_csv('output0.csv', sep=delimiter, encoding='latin1', engine='python')
         df = df.dropna(subset=['Event'])
         df['Event'] = df['Event'].astype(str)
         df['Event_lower'] = df['Event'].str.lower()
@@ -623,8 +624,17 @@ def populate_scrollable_frame(main_frame):
             end_event_var, 
             enable_plot
         ))
-    analyze_folder_button.grid(row=0, column=1, padx=5, pady=5)
-
+    analyze_folder_button.grid(row=0, column=2, padx=5, pady=5)
+    
+    view_file_button = ctk.CTkButton(buttons_frame, text="Rapid Analysis",
+        command=lambda: rapid_analysis(
+            main_frame, 
+            checkbox_align.get(), #checkbox1
+            start_time1_entry,
+            start_time2_entry,
+            checkbox_event.get()))
+        
+    view_file_button.grid(row=0, column=1, padx=5, pady=5)
     # Threshold Settings
     threshold_frame = ctk.CTkFrame(analysis_frame, fg_color="#4A4A4A",
                                    corner_radius=5, border_width=1, border_color="#FFD700")
@@ -752,16 +762,18 @@ def populate_scrollable_frame(main_frame):
         if multi_file_switch.get():
             pick_files_button.configure(state="normal")
             upload_files_button.configure(state="normal")
-            analyze_folder_button.configure(state="normal")
+            analyze_folder_button.configure(state="normal", fg_color="green", text_color="black")
             file1_optionmenu.configure(state="disabled")
             analyze_file_button.configure(state="disabled")
+            view_file_button.configure(state="disabled")
             set_state_frame(file2_frame, "disabled")
         else:
             pick_files_button.configure(state="disabled")
             upload_files_button.configure(state="disabled")
-            analyze_folder_button.configure(state="disabled")
+            analyze_folder_button.configure(state="disabled", fg_color='gray', text_color='black')
             file1_optionmenu.configure(state="normal")
             analyze_file_button.configure(state="normal")
+            view_file_button.configure(state="normal")
             set_state_frame(file2_frame, "normal")
 
     # Initialize multi-select state

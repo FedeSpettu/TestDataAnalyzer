@@ -12,6 +12,69 @@ from io import BytesIO
 from PIL import Image
 from scipy.spatial import KDTree
 from matplotlib.patches import Rectangle
+import os
+from src.usefull_functions import apply_formulas_to_column, convert_to_relative_time, align_dataframes
+from datetime import datetime
+
+
+def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt', sec=None):
+    """
+    Processa gli eventi in df1 (e opzionalmente in df2) in base alle opzioni specificate nel file options_event.txt.
+
+    Parametri:
+    - checkbox_event: Booleano. Se False la funzione restituisce i DataFrame senza modifiche.
+    - df1: DataFrame principale che deve contenere la colonna 'Event'.
+    - df2: (Opzionale) Secondo DataFrame da processare in base agli stessi limiti.
+    - options_file: Percorso del file contenente le opzioni evento.
+    - sec: (Opzionale) Offset per regolare il punto di stop se viene trovato un solo evento.
+    
+    Restituisce:
+    - df1, e df2 se fornito, entrambi tagliati in base agli eventi individuati.
+    """
+    if not checkbox_event:
+        return df1, df2
+
+    # Estrai gli indici degli eventi in df1 in base ai nomi letti dal file delle opzioni.
+    indices_event = []
+    with open(options_file, 'r') as f:
+        for line in f:
+            parts = line.split('@#@')
+            if len(parts) > 1:
+                event_name = parts[1].strip()
+                matching_idx = df1.index[df1['Event'] == event_name]
+                if not matching_idx.empty:
+                    indices_event.append(int(matching_idx.min()))
+    indices_event.sort()
+
+    # Determina gli indici di inizio e fine in df1.
+    if len(indices_event) == 1:
+        start_event = indices_event[0]
+        stop_event = df1.index[-1-int(sec)] if sec else df1.index[-1]
+    elif len(indices_event) >= 2:
+        start_event = indices_event[0]
+        stop_event = indices_event[1]
+    else:
+        start_event, stop_event = df1.index[0], df1.index[-1]
+
+    # Taglia df1 dai limiti determinati
+    df1 = df1.iloc[start_event:stop_event+1]
+    start_line = df1.iloc[0, 0]  # Primo valore della prima colonna dopo lo slicing
+    stop_line = df1.iloc[-1, 0]  # Ultimo valore della prima colonna dopo lo slicing
+
+    # Se df2 è fornito, taglia anche df2 cercando le corrispondenze
+    if df2 is not None:
+        try:
+            start_idx_df2 = df2.index[df2.iloc[:, 0] == start_line].tolist()[0]
+        except IndexError:
+            start_idx_df2 = df2.index[0]
+        try:
+            stop_idx_df2 = df2.index[df2.iloc[:, 0] == stop_line].tolist()[0]
+        except IndexError:
+            stop_idx_df2 = df2.index[-1]
+        df2 = df2.iloc[start_idx_df2:stop_idx_df2+1]
+
+    return df1, df2
+
 
 # --- Monkey-patch NavigationToolbar2Tk.set_message to avoid thread errors ---
 def safe_set_message(self, s):
@@ -282,24 +345,36 @@ class InteractivePlotApp(tk.Toplevel):
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-        # Listbox for DF1 columns.
+        # --- DF1 Columns with Filter ---
         df1_frame = ttk.LabelFrame(right_frame, text="DF1 Columns")
         df1_frame.pack(fill=tk.X, pady=2)
+        # Filter entry for DF1 columns
+        df1_filter_label = ttk.Label(df1_frame, text="Filter Columns:")
+        df1_filter_label.pack(fill=tk.X, padx=5, pady=2)
+        self.df1_filter_var = tk.StringVar()
+        self.df1_filter_entry = ttk.Entry(df1_frame, textvariable=self.df1_filter_var)
+        self.df1_filter_entry.pack(fill=tk.X, padx=5, pady=2)
+        self.df1_filter_var.trace("w", lambda *args: self.populate_df1_listbox())
+        # Listbox for DF1 columns.
         self.df1_listbox = tk.Listbox(df1_frame, selectmode=tk.MULTIPLE, exportselection=False, height=6)
         self.df1_listbox.pack(fill=tk.BOTH, padx=5, pady=5)
-        for col in self.df1.columns:
-            if col != "Event" and col != self.time_column:
-                self.df1_listbox.insert(tk.END, col)
+        self.populate_df1_listbox()
 
-        # Listbox for DF2 columns (if available).
+        # --- DF2 Columns with Filter (if available) ---
         if self.df2 is not None:
             df2_frame = ttk.LabelFrame(right_frame, text="DF2 Columns")
             df2_frame.pack(fill=tk.X, pady=2)
+            # Filter entry for DF2 columns
+            df2_filter_label = ttk.Label(df2_frame, text="Filter Columns:")
+            df2_filter_label.pack(fill=tk.X, padx=5, pady=2)
+            self.df2_filter_var = tk.StringVar()
+            self.df2_filter_entry = ttk.Entry(df2_frame, textvariable=self.df2_filter_var)
+            self.df2_filter_entry.pack(fill=tk.X, padx=5, pady=2)
+            self.df2_filter_var.trace("w", lambda *args: self.populate_df2_listbox())
+            # Listbox for DF2 columns.
             self.df2_listbox = tk.Listbox(df2_frame, selectmode=tk.MULTIPLE, exportselection=False, height=6)
             self.df2_listbox.pack(fill=tk.BOTH, padx=5, pady=5)
-            for col in self.df2.columns:
-                if col != "Event" and col != self.df2_time_column:
-                    self.df2_listbox.insert(tk.END, col)
+            self.populate_df2_listbox()
         else:
             self.df2_listbox = None
 
@@ -402,14 +477,32 @@ class InteractivePlotApp(tk.Toplevel):
 
         self.plot_normal()
 
-    def format_event(self, event_tuple):
-        """Helper to convert an event tuple (row_index, event_name) to a display string."""
-        return f"Row {event_tuple[0]}: {event_tuple[1]}"
+    def populate_df1_listbox(self):
+        """Populate the DF1 listbox with columns that match the filter text."""
+        self.df1_listbox.delete(0, tk.END)
+        filter_text = self.df1_filter_var.get().lower()
+        for col in self.df1.columns:
+            if col not in ["Event", self.time_column]:
+                if filter_text in col.lower():
+                    self.df1_listbox.insert(tk.END, col)
+
+    def populate_df2_listbox(self):
+        """Populate the DF2 listbox with columns that match the filter text."""
+        self.df2_listbox.delete(0, tk.END)
+        filter_text = self.df2_filter_var.get().lower()
+        for col in self.df2.columns:
+            if col not in ["Event", self.df2_time_column]:
+                if filter_text in col.lower():
+                    self.df2_listbox.insert(tk.END, col)
 
     def filter_events(self):
         filter_text = self.event_filter_var.get().lower()
         filtered_events = [self.format_event(ev) for ev in self.all_events if filter_text in ev[1].lower()]
         self.event_menu.update_options(filtered_events)
+
+    def format_event(self, event_tuple):
+        """Helper to convert an event tuple (row_index, event_name) to a display string."""
+        return f"Row {event_tuple[0]}: {event_tuple[1]}"
 
     def add_event_from_option(self, selected):
         if not selected or selected == "Select Event":
@@ -1034,6 +1127,53 @@ class InteractivePlotApp(tk.Toplevel):
         self.common_time = None
         self.ma_window = None
         self.create_plot()
+
+
+def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
+    """
+    Perform rapid analysis on the provided data.
+    :param main_frame: Main Tkinter frame.
+    :param checkbox_align: Checkbox for alignment.
+    :param checkbox_event: Checkbox for event.
+    :param start_time1_entry: Entry for start time 1.
+    :param start_time2_entry: Entry for start time 2.
+    :param file2_optionmenu_var: Option menu variable for file 2.
+    :param file1_optionmenu_var: Option menu variable for file 1.   
+    """
+    if os.path.isfile('output0.csv'):
+        df1 = pd.read_csv('output0.csv')
+    else:  
+        messagebox.showerror("Error", "No data found")
+        return
+    if os.path.isfile('output1.csv'):
+        df2 = pd.read_csv('output1.csv')
+    
+    if checkbox_align:
+
+        ref_time1 = pd.to_datetime(start_time1_entry.get(), format='%H:%M:%S')
+        column_date1 = df1.columns[0]
+        df1 = apply_formulas_to_column(df1, ref_time1, column_date1)
+        
+        if os.path.isfile('output1.csv'):
+        
+            ref_time2 = pd.to_datetime(start_time2_entry.get(), format='%H:%M:%S')
+            column_date2 = df2.columns[0]
+            df2 = apply_formulas_to_column(df2, ref_time2, column_date2) 
+        
+            df1, df2, delta_sec = align_dataframes(df1, df2, column_date1, column_date2)
+
+            df1, df2 = process_event(checkbox_event, df1, df2=df2, options_file='options_event.txt', sec=delta_sec)
+            launch_interactive_plot(main_frame, df1, df2=df2)
+
+        else:
+            df1 = process_event(checkbox_event, df1, df2=None, options_file='options_event.txt', sec=None)
+            launch_interactive_plot(main_frame, df1, df2=None)
+    else:
+        ref_time1 = pd.to_datetime(start_time1_entry.get(), format='%H:%M:%S')
+        column_date1 = df1.columns[0]
+        df1 = apply_formulas_to_column(df1, ref_time1, column_date1)
+        launch_interactive_plot(main_frame, df1, df2=None)
+        
 
 def launch_interactive_plot(parent, df1, df2=None):
     """
