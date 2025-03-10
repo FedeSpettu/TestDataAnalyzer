@@ -2143,9 +2143,9 @@ def analyze_files(minimum, maximum, threshold, checkbox, checkbox1,var_unit,chec
                             df2 = df2.drop(columns='Event')
                             df2.insert(1, 'Event', df0_keepevent)
                         if 'df0' in locals() or 'df0' in globals():
-                            launch_interactive_plot(root,df0,df2)
+                            launch_interactive_plot(root,df2,df0)
                         else:
-                            launch_interactive_plot(root,df1, df2)
+                            launch_interactive_plot(root,df2, df1)
                     else:
                         if 'df' in locals() or 'df' in globals():
                             launch_interactive_plot(root, df)
