@@ -5,6 +5,8 @@ import json
 from datetime import datetime
 from collections import OrderedDict
 
+entry_time=0
+
 ##### Config parameters #####
 ELEM_TO_PLOT_AS_DATA =[
     'BloodCircuitStatusIndication',
@@ -158,11 +160,16 @@ def ExtractEvent(time, initialString, dicEvent = ''):
 timeReference = 0
 def Getmsec(time):
     global timeReference
+    global entry_time
     dateTime = time[:-6].replace('T',' ').split('.')
     dateTimeFormatted = dateTime[0]+'.'+dateTime[1][:6] if len(dateTime) == 2 else dateTime[0]+'.000000'
+    #print(dateTimeFormatted)
     objTime = datetime.strptime(dateTimeFormatted, '%Y-%m-%d %H:%M:%S.%f')
+    
     if timeReference == 0:
         timeReference = objTime.timestamp()
+        entry_time = objTime.strftime("%H:%M:%S")
+        #print(entry_time)
     deltaTime = round(objTime.timestamp() - timeReference, 6)
     return str(deltaTime)
 
@@ -246,7 +253,7 @@ def scrub_json(file_name):
             
             #Complete
             print('\nProcedure successfully completed!')
-            return csvDataLogs
+            return csvDataLogs , entry_time
     except:
         print('Error: file not correctly formatted')
         try:
@@ -255,4 +262,4 @@ def scrub_json(file_name):
         except:
             # csvDataLogs was never defined, so just pass
             pass
-        return False
+        return False, False

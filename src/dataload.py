@@ -21,6 +21,7 @@ import customtkinter as ctk
 from src import loading
 from src import ScrubDiagnostic as sd
 from src import ScrubSniffer as sj
+from pathlib import Path
 
 def reset_gui( elements):
     
@@ -326,13 +327,16 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         file_path = folder_path + '\\' + file_path
         file_ext = file_path.split('.')[-1]
  
-        output_name=sd.scrub_diagnostic(directory_path)
+        output_name, start_time_diagnostic=sd.scrub_diagnostic(directory_path)
         if output_name:
             file_path=output_name
+            print("start_time_diagnostic:" ,start_time_diagnostic)
             
            
         if output_name == False:
-            output_name=sj.scrub_json(directory_path)
+            output_name, start_time_json=sj.scrub_json(directory_path)
+            #print(output_name)
+            print("start_time_json:",start_time_json)
             
 
         if output_name:  
@@ -342,7 +346,18 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
             df = pd.read_excel(file_path)
             df.to_csv('data.csv', index=False)
             file_path='data.csv'
-           
+
+        filename = Path(file_path).name  
+
+        # Validate format
+        pattern_file = r"^DataLog_\d{6}_\d{6}"
+        if re.match(pattern_file, filename):
+            time_part = filename.split("_")[2] 
+            start_time_datalog = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"  # Convert to HH:MM:SS
+            print(start_time_datalog)  
+        else:
+            print("Invalid filename format")
+
         keep, keep2 = find_data(file_path)
         delimiter = auto_detect_delimiter(file_path)
         pattern = re.compile(delimiter)  # Compila una volta la regex

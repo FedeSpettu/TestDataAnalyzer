@@ -20,7 +20,7 @@ DEBUG_TRACE = False
 alarm_list    = []
 activity_list = []
 timeReference = 0
-
+entry_time=0
 def Convert24(time):
     # Parse the time string into a datetime object
     t = datetime.strptime(time, "%I:%M:%S:%f %p")
@@ -71,6 +71,9 @@ def extract_time(row):
 
 def compute_delta_sec(list_h_min_sec_msec, ref):
     # initialyze variables
+    global entry_time
+    entry_time = str(ref[0])+":"+str(ref[1])+":"+str(ref[2])
+    #print("entry_time",entry_time)
     delta_sec = 0
     hours = 0
     minute = 0
@@ -120,6 +123,7 @@ def fill(text,Data):
 
 def SetTime(Data,row):
     time_tmp = extract_time(row)
+    #print("Time: ", time_tmp)
     if not Data.Params[0][1][0]: 
         Data.Params[0][1][1] = time_tmp
     Data.Params[0][1][0].append(compute_delta_sec(time_tmp,Data.Params[0][1][1]))
@@ -199,10 +203,10 @@ def scrub_diagnostic(file_name):
                 row+=1
         progress_bar(len(myData.Params[0][1][0]),len(myData.Params[0][1][0]))
         print("\nScript Completed !!!")
-        return OutputName
+        return OutputName, entry_time
     except:
         print("Error: File not correct")
         if os.path.isfile(OutputName):    
             os.remove(OutputName)
-        return False
+        return False, False
 
