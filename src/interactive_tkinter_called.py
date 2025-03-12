@@ -10,17 +10,16 @@ import openpyxl
 from openpyxl.drawing.image import Image as ExcelImage
 from io import BytesIO
 from PIL import Image
-from scipy.spatial import KDTree
-from matplotlib.patches import Rectangle
 import os
 import math
+import re
 from src.usefull_functions import apply_formulas_to_column, convert_to_relative_time, align_dataframes
 from datetime import datetime
+from matplotlib.text import Annotation  # For identifying annotation objects
 
 def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt', sec=None):
     if not checkbox_event:
         return df1, df2
-
     indices_event = []
     with open(options_file, 'r') as f:
         for line in f:
@@ -31,7 +30,6 @@ def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt
                 if not matching_idx.empty:
                     indices_event.append(int(matching_idx.min()))
     indices_event.sort()
-
     if len(indices_event) == 1:
         start_event = indices_event[0]
         stop_event = df1.index[-1-int(sec)] if sec else df1.index[-1]
@@ -40,11 +38,9 @@ def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt
         stop_event = indices_event[1]
     else:
         start_event, stop_event = df1.index[0], df1.index[-1]
-
     df1 = df1.iloc[start_event:stop_event+1]
     start_line = df1.iloc[0, 0]
     stop_line = df1.iloc[-1, 0]
-
     if df2 is not None:
         try:
             start_idx_df2 = df2.index[df2.iloc[:, 0] == start_line].tolist()[0]
@@ -55,7 +51,6 @@ def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt
         except IndexError:
             stop_idx_df2 = df2.index[-1]
         df2 = df2.iloc[start_idx_df2:stop_idx_df2+1]
-
     return df1, df2
 
 def safe_set_message(self, s):
@@ -86,8 +81,8 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         self._zoom_start_data = (event.xdata, event.ydata)
         ax = event.inaxes
         if self._zoom_rect is None:
-            self._zoom_rect = Rectangle((event.xdata, event.ydata), 0, 0,
-                                         fill=False, color='black', linestyle='--')
+            self._zoom_rect = plt.Rectangle((event.xdata, event.ydata), 0, 0,
+                                             fill=False, color='black', linestyle='--')
             ax.add_patch(self._zoom_rect)
         else:
             self._zoom_rect.set_visible(True)
@@ -142,6 +137,9 @@ class PaginatedOptionMenu:
     def __init__(self, master, variable, options, command=None, page_size=10):
         self.master = master
         self.variable = variable
+        # If the options list is empty, set a default value.
+        if not options:
+            options = ["Select Event"]
         self.all_options = options
         self.command = command
         self.page_size = page_size
@@ -156,7 +154,7 @@ class PaginatedOptionMenu:
         )
         self.option_menu.pack(fill=tk.X, padx=5, pady=2)
         self.event_option_var.set("Select Event")
-
+    
     def get_current_page_options(self):
         start = self.current_page * self.page_size
         end = start + self.page_size
@@ -166,7 +164,7 @@ class PaginatedOptionMenu:
         if end < len(self.all_options):
             page_options.append("Next >")
         return page_options
-
+    
     def on_select(self, value):
         if value == "Next >":
             self.current_page += 1
@@ -184,7 +182,7 @@ class PaginatedOptionMenu:
             if self.command:
                 self.command(value)
             self.event_option_var.set("Select Event")
-
+    
     def refresh_menu(self):
         new_options = self.get_current_page_options()
         menu = self.option_menu["menu"]
@@ -195,7 +193,7 @@ class PaginatedOptionMenu:
                 command=tk._setit(self.event_option_var, option, self.on_select)
             )
         self.event_option_var.set("Select Event")
-
+    
     def update_options(self, new_options):
         self.all_options = new_options
         self.current_page = 0
@@ -216,7 +214,7 @@ class InteractivePlotApp(tk.Toplevel):
                 self.df2 = self.df2.drop('Event', axis=1)
             if 'Limit1' in self.df2.columns:
                 self.df2 = self.df2.drop('Limit1', axis=1)
-            if 'Limit2' in self.df2.columns:    
+            if 'Limit2' in self.df2.columns:
                 self.df2 = self.df2.drop('Limit2', axis=1)
         else:
             self.df2 = None
@@ -225,12 +223,9 @@ class InteractivePlotApp(tk.Toplevel):
             x_axis = pd.date_range(start='00:00:00', periods=len(self.df1), freq='1S').strftime('%H:%M:%S')
             self.df1.insert(0, 'Time', x_axis)
         self.time_column = self.df1.columns[0]
-        # Increase graph size: figure is now 15x13 inches.
         self.fig, self.ax = plt.subplots(figsize=(10, 8))
-        # Set fixed margins so the title and legend areas are reserved.
         self.fig.subplots_adjust(top=0.95, bottom=0.20, right=0.95, left=0.05, hspace=0.2, wspace=0.2)
         self.df1_time = pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S", cache=True)
-
         if self.df2 is not None:
             if not _is_time_column(self.df2.iloc[:, 0]):
                 x_axis = pd.date_range(start='00:00:00', periods=len(self.df2), freq='1S').strftime('%H:%M:%S')
@@ -243,8 +238,9 @@ class InteractivePlotApp(tk.Toplevel):
         self.colors_df1 = {}
         self.colors_df2 = {}
         self.thresholds = []
-        self.selected_events = []  
+        self.selected_events = []
         self.custom_events = []
+        self.custom_event_plot_times = {}
 
         self.data_operation = 'normal'
         self.computed_series = None
@@ -255,18 +251,16 @@ class InteractivePlotApp(tk.Toplevel):
         self.xy_data = []
         self.kdtree = None
 
-        self.current_df1_plotted = []
-        self.current_df2_plotted = []
+        self.selected_df1_columns = set()
+        self.selected_df2_columns = set()
 
-        self.custom_event_mode = False
-        self.custom_event_name = None
-        self.custom_event_cid = None
-
-        # Tooltip related attributes with delayed display
         self.listbox_tooltip = None
         self.tooltip_after_id = None
         self.tooltip_index = None
         self.tooltip_widget = None
+
+        # Dictionary to keep track of annotations for lines
+        self.line_annotations = {}
 
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -290,19 +284,21 @@ class InteractivePlotApp(tk.Toplevel):
         self.toolbar.update()
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        self.annot = self.ax.annotate("", xy=(0, 0), xytext=(10, 10),
-                                    textcoords="offset points",
-                                    bbox=dict(boxstyle="round", fc="w"),
-                                    arrowprops=dict(arrowstyle="->"))
+        # Create annotation for hover (this is separate from the pick toggle)
+        self.annot = self.ax.annotate("", xy=(0, 0), xytext=(10, 0),
+                                       textcoords="offset points", ha="left", va="center",
+                                       bbox=dict(boxstyle="round", fc="w"),
+                                       arrowprops=dict(arrowstyle="->"))
         self.annot.set_visible(False)
         self.canvas.mpl_connect("motion_notify_event", self.on_hover)
+        # Connect the pick event (for clicking on lines/annotations)
+        self.canvas.mpl_connect("pick_event", self.on_pick)
 
         # RIGHT: Controls.
         right_frame = ttk.Frame(main_frame, width=300)
         right_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         right_frame.pack_propagate(False)
-
-        # --- DF1 Columns with Filter ---
+        # DF1 Columns listbox
         df1_frame = ttk.LabelFrame(right_frame, text="DF1 Columns")
         df1_frame.pack(fill=tk.X, pady=2)
         df1_filter_label = ttk.Label(df1_frame, text="Filter Columns:")
@@ -315,9 +311,9 @@ class InteractivePlotApp(tk.Toplevel):
         self.df1_listbox.pack(fill=tk.BOTH, padx=5, pady=5)
         self.df1_listbox.bind("<Motion>", self.on_listbox_hover)
         self.df1_listbox.bind("<Leave>", self.on_listbox_leave)
+        self.df1_listbox.bind("<<ListboxSelect>>", self.update_df1_selection)
         self.populate_df1_listbox()
-
-        # --- DF2 Columns with Filter (if available) ---
+        # DF2 Columns listbox
         if self.df2 is not None:
             df2_frame = ttk.LabelFrame(right_frame, text="DF2 Columns")
             df2_frame.pack(fill=tk.X, pady=2)
@@ -331,19 +327,20 @@ class InteractivePlotApp(tk.Toplevel):
             self.df2_listbox.pack(fill=tk.BOTH, padx=5, pady=5)
             self.df2_listbox.bind("<Motion>", self.on_listbox_hover)
             self.df2_listbox.bind("<Leave>", self.on_listbox_leave)
+            self.df2_listbox.bind("<<ListboxSelect>>", self.update_df2_selection)
             self.populate_df2_listbox()
         else:
             self.df2_listbox = None
 
         self.plot_btn = ttk.Button(right_frame, text="Plot Selected", command=self.plot_normal)
         self.plot_btn.pack(fill=tk.X, pady=2, padx=5)
-
+        self.reset_view_btn = ttk.Button(right_frame, text="Reset View", command=self.reset_view)
+        self.reset_view_btn.pack(fill=tk.X, pady=2, padx=5)
         self.color_btn_df1 = ttk.Button(right_frame, text="Choose DF1 Color", command=self.choose_color_df1)
         self.color_btn_df1.pack(fill=tk.X, pady=2, padx=5)
         if self.df2 is not None:
             self.color_btn_df2 = ttk.Button(right_frame, text="Choose DF2 Color", command=self.choose_color_df2)
             self.color_btn_df2.pack(fill=tk.X, pady=2, padx=5)
-
         data_ops_frame = ttk.LabelFrame(right_frame, text="Data Operations")
         data_ops_frame.pack(fill=tk.X, pady=2, padx=5)
         self.diff_btn = ttk.Button(data_ops_frame, text="Plot Difference", command=self.plot_difference)
@@ -357,7 +354,7 @@ class InteractivePlotApp(tk.Toplevel):
         self.ma_btn.pack(fill=tk.X, padx=5, pady=2)
         self.ma_time_btn = ttk.Button(data_ops_frame, text="Plot MA (Time Window)", command=self.plot_moving_average_time)
         self.ma_time_btn.pack(fill=tk.X, padx=5, pady=2)
-
+        # Threshold section with "Remove Last" button moved to a new row
         thresh_frame = ttk.LabelFrame(right_frame, text="Thresholds")
         thresh_frame.pack(fill=tk.X, pady=2, padx=5)
         thresh_inner = ttk.Frame(thresh_frame)
@@ -366,14 +363,14 @@ class InteractivePlotApp(tk.Toplevel):
         self.threshold_entry = ttk.Entry(thresh_inner, width=8)
         self.threshold_entry.pack(side=tk.LEFT, padx=2)
         self.add_thresh_btn = ttk.Button(thresh_inner, text="Add", command=self.add_threshold)
-        self.add_thresh_btn.pack(side=tk.LEFT, padx=2)
-        self.rem_thresh_btn = ttk.Button(thresh_inner, text="Remove Last", command=self.remove_threshold)
-        self.rem_thresh_btn.pack(side=tk.LEFT, padx=2)
-
+        self.add_thresh_btn.pack(side=tk.RIGHT, padx=2)
+        thresh_remove_frame = ttk.Frame(thresh_frame)
+        thresh_remove_frame.pack(fill=tk.X, pady=2, padx=5)
+        self.rem_thresh_btn = ttk.Button(thresh_remove_frame, text="Remove Last Threshold", command=self.remove_threshold)
+        self.rem_thresh_btn.pack(fill=tk.X, padx=2)
         if "Event" in self.df1.columns:
             event_frame = ttk.LabelFrame(right_frame, text="Events")
             event_frame.pack(fill=tk.X, pady=2, padx=5)
-            
             ttk.Label(event_frame, text="Filter Events:").pack(padx=5, pady=2)
             self.event_filter_var = tk.StringVar()
             self.event_filter_entry = ttk.Entry(event_frame, textvariable=self.event_filter_var)
@@ -382,83 +379,102 @@ class InteractivePlotApp(tk.Toplevel):
             self.all_events = [(idx, ev) for idx, ev in self.df1["Event"].dropna().items()]
             self.event_option_var = tk.StringVar(event_frame)
             self.event_option_var.set("Select Event")
-            formatted_events = [f"Row {idx+2}: {ev}" for idx, ev in self.all_events]
+            formatted_events = [self.format_event(ev_tuple) for ev_tuple in self.all_events]
+            if not formatted_events:
+                formatted_events = ["Select Event"]
             self.event_menu = PaginatedOptionMenu(event_frame, self.event_option_var, formatted_events,
                                                    command=self.add_event_from_option, page_size=10)
-            
             self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", command=self.remove_last_event)
             self.rem_event_btn.pack(fill=tk.X, padx=5, pady=2)
             self.create_event_btn = ttk.Button(event_frame, text="Create Custom Event", command=self.initiate_custom_event)
-            self.create_event_btn.pack(fill=tk.X, pady=5)
+            self.create_event_btn.pack(fill=tk.X, padx=5, pady=2)
         else:
             self.df1["Event"] = None
             event_frame = ttk.LabelFrame(right_frame, text="Events")
             event_frame.pack(fill=tk.X, pady=2, padx=5)
-            
             self.all_events = []
-            
             ttk.Label(event_frame, text="Filter Events:").pack(padx=5, pady=2)
             self.event_filter_var = tk.StringVar()
             self.event_filter_entry = ttk.Entry(event_frame, textvariable=self.event_filter_var)
             self.event_filter_entry.pack(fill=tk.X, padx=5, pady=2)
             self.event_filter_entry.bind("<KeyRelease>", lambda event: self.filter_events())
-
             self.event_option_var = tk.StringVar(event_frame)
             self.event_option_var.set("Select Event")
-            
             self.event_menu = PaginatedOptionMenu(event_frame, self.event_option_var, ["Select Event"],
                                                    command=self.add_event_from_option, page_size=10)
-            
-            self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", 
-                                            command=self.remove_last_event)
+            self.rem_event_btn = ttk.Button(event_frame, text="Remove Last Event", command=self.remove_last_event)
             self.rem_event_btn.pack(fill=tk.X, padx=5, pady=2)
-            self.create_event_btn = ttk.Button(event_frame, text="Create Custom Event", 
-                                            command=self.initiate_custom_event)
+            self.create_event_btn = ttk.Button(event_frame, text="Create Custom Event", command=self.initiate_custom_event)
             self.create_event_btn.pack(fill=tk.X, padx=5, pady=2)
-
         final_frame = ttk.Frame(right_frame)
         final_frame.pack(fill=tk.X, pady=5, padx=5)
+        self.new_save_btn = ttk.Button(final_frame, text="Save To Excel", command=self.save_to_excel)
+        self.new_save_btn.pack(fill=tk.X, pady=2)
         self.save_btn = ttk.Button(final_frame, text="Append Plot to Excel", command=self.append_plot_to_excel)
         self.save_btn.pack(fill=tk.X, pady=2)
         self.close_btn = ttk.Button(final_frame, text="Close", command=self.destroy)
         self.close_btn.pack(fill=tk.X, pady=2)
-
         self.plot_normal()
+
+    def format_event(self, event_tuple):
+        row_idx, ev_name = event_tuple
+        common_ref = self.get_common_reference()
+        if row_idx in self.custom_event_plot_times:
+            ev_sec = self.custom_event_plot_times[row_idx]
+        else:
+            ev_time = pd.to_datetime(self.df1.loc[row_idx, self.time_column], format="%H:%M:%S")
+            ev_sec = (ev_time - common_ref).total_seconds()
+        return f"Row {row_idx+2} ({ev_sec:.1f}s): {ev_name}"
+
+    def update_df1_selection(self, event):
+        visible = {self.df1_listbox.get(i) for i in range(self.df1_listbox.size())}
+        selected_visible = {self.df1_listbox.get(i) for i in self.df1_listbox.curselection()}
+        self.selected_df1_columns -= (visible - selected_visible)
+        self.selected_df1_columns |= selected_visible
+
+    def update_df2_selection(self, event):
+        visible = {self.df2_listbox.get(i) for i in range(self.df2_listbox.size())}
+        selected_visible = {self.df2_listbox.get(i) for i in self.df2_listbox.curselection()}
+        self.selected_df2_columns -= (visible - selected_visible)
+        self.selected_df2_columns |= selected_visible
 
     def populate_df1_listbox(self):
         self.df1_listbox.delete(0, tk.END)
         filter_text = self.df1_filter_entry.get().strip().lower()
         for col in self.df1.columns:
-            if col not in ["Event", self.time_column]:
-                if filter_text in col.lower():
-                    self.df1_listbox.insert(tk.END, col)
-                    
+            if col not in ["Event", self.time_column] and filter_text in col.lower():
+                self.df1_listbox.insert(tk.END, col)
+        for i in range(self.df1_listbox.size()):
+            if self.df1_listbox.get(i) in self.selected_df1_columns:
+                self.df1_listbox.select_set(i)
+
     def populate_df2_listbox(self):
+        if self.df2_listbox is None:
+            return
         self.df2_listbox.delete(0, tk.END)
         filter_text = self.df2_filter_entry.get().strip().lower()
         for col in self.df2.columns:
-            if col not in ["Event", self.df2_time_column]:
-                if filter_text in col.lower():
-                    self.df2_listbox.insert(tk.END, col)
+            if col not in ["Event", self.df2_time_column] and filter_text in col.lower():
+                self.df2_listbox.insert(tk.END, col)
+        for i in range(self.df2_listbox.size()):
+            if self.df2_listbox.get(i) in self.selected_df2_columns:
+                self.df2_listbox.select_set(i)
 
     def filter_events(self):
         filter_text = self.event_filter_entry.get().strip().lower()
         filtered_events = [self.format_event(ev) for ev in self.all_events if filter_text in self.format_event(ev).lower()]
         self.event_menu.update_options(filtered_events)
 
-    def format_event(self, event_tuple):
-        return f"Row {event_tuple[0]}: {event_tuple[1]}"
-
     def add_event_from_option(self, selected):
         if not selected or selected == "Select Event":
             return
-        try:
-            parts = selected.split(": ", 1)
-            row_str = parts[0].replace("Row ", "")
-            row_idx = int(row_str)
-            ev_name = parts[1]
-        except Exception:
+        m = re.match(r"Row (\d+) \([^)]+\): (.+)", selected)
+        if not m:
+            messagebox.showerror("Error", "Selected event string format is invalid.")
             return
+        row_number = int(m.group(1))
+        row_idx = row_number - 2
+        ev_name = m.group(2).strip()
         event_tuple = (row_idx, ev_name)
         if event_tuple not in self.selected_events:
             self.selected_events.append(event_tuple)
@@ -473,194 +489,114 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             return t1.min()
 
-    def create_plot(self):
-        self.ax.clear()
-        self.xy_data = []
-        common_ref = self.get_common_reference()
-        default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    # Modified on_custom_event_click: no column label annotation will be added
+    def on_custom_event_click(self, event):
+        if self.custom_event_mode and event.inaxes == self.ax:
+            common_ref = self.get_common_reference()
+            t_sec = (self.df1_time - common_ref).dt.total_seconds()
+            idx = (np.abs(t_sec - event.xdata)).idxmin()
+            self.df1.loc[idx, "Event"] = self.custom_event_name
+            self.custom_event_plot_times[idx] = event.xdata
+            event_tuple = (idx, self.custom_event_name)
+            if event_tuple not in self.selected_events:
+                self.selected_events.append(event_tuple)
+            timestamp = (common_ref + pd.Timedelta(seconds=event.xdata)).strftime('%H:%M:%S')
+            messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at timestamp {timestamp}")
+            self.canvas.mpl_disconnect(self.custom_event_cid)
+            self.custom_event_mode = False
+            self.create_plot()
 
-        self.current_df1_plotted = []
-        self.current_df2_plotted = []
+    def initiate_custom_event(self):
+        custom_event = askstring("Custom Event", "Enter custom event name:")
+        if custom_event:
+            self.custom_event_mode = True
+            self.custom_event_name = custom_event
+            if custom_event not in [ev[1] for ev in self.custom_events]:
+                self.custom_events.append(custom_event)
+            messagebox.showinfo("Custom Event", "Click on the chart to add the event.")
+            self.custom_event_cid = self.canvas.mpl_connect("button_press_event", self.on_custom_event_click)
 
-        if self.data_operation == 'computed_difference' and self.computed_series is not None:
-            try:
-                self.ax.plot(self.common_time, self.computed_series, label=self.computed_label, color='green')
-                self.xy_data = list(zip(self.common_time, self.computed_series))
-            except Exception as e:
-                messagebox.showerror("Plot Error", f"Error plotting computed difference: {e}")
-        elif self.data_operation == 'moving_average_time' and self.ma_window is not None:
-            df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
-            self.current_df1_plotted = df1_selected
-            for i, col in enumerate(df1_selected):
-                try:
-                    t = self.df1_time
-                    series = self.df1[col].copy()
-                    series.index = t
-                    window_str = f"{self.ma_window}s"
-                    ma = series.rolling(window=window_str, min_periods=1).mean().values
-                    t_sec = (t - common_ref).dt.total_seconds().values
-                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
-                    self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=color)
-                    self.xy_data.extend(list(zip(t_sec, ma)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (MA Time, DF1): {e}")
-                    continue
-            if self.df2 is not None and self.df2_listbox is not None:
-                df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
-                self.current_df2_plotted = df2_selected
-                for i, col in enumerate(df2_selected):
-                    try:
-                        t = self.df2_time
-                        series = self.df2[col].copy()
-                        series.index = t
-                        window_str = f"{self.ma_window}s"
-                        ma = series.rolling(window=window_str, min_periods=1).mean().values
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
-                        self.ax.plot(t_sec, ma, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=color)
-                        self.xy_data.extend(list(zip(t_sec, ma)))
-                    except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (MA Time, DF2): {e}")
-                        continue
-        elif self.data_operation == 'moving_average' and self.ma_window is not None:
-            df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
-            self.current_df1_plotted = df1_selected
-            for i, col in enumerate(df1_selected):
-                try:
-                    t = self.df1_time
-                    t_sec = (t - common_ref).dt.total_seconds().values
-                    ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean().values
-                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
-                    self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF1:{col}", color=color)
-                    self.xy_data.extend(list(zip(t_sec, ma)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (MA, DF1): {e}")
-                    continue
-            if self.df2 is not None and self.df2_listbox is not None:
-                df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
-                self.current_df2_plotted = df2_selected
-                for col in df2_selected:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean().values
-                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
-                        self.ax.plot(t_sec, ma, label=f"MA ({self.ma_window}): DF2:{col}", color=color)
-                        self.xy_data.extend(list(zip(t_sec, ma)))
-                    except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (MA, DF2): {e}")
-                        continue
-        else:
-            df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
-            self.current_df1_plotted = df1_selected
-            for col in df1_selected:
-                try:
-                    t = self.df1_time
-                    t_sec = (t - common_ref).dt.total_seconds().values
-                    y_vals = self.df1[col].values
-                    color = self.colors_df1.get(col, None)
-                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=color)
-                    self.xy_data.extend(list(zip(t_sec, y_vals)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (DF1): {e}")
-                    continue
-            if self.df2 is not None and self.df2_listbox is not None:
-                df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
-                self.current_df2_plotted = df2_selected
-                for col in df2_selected:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        y_vals = self.df2[col].values
-                        color = self.colors_df2.get(col, None)
-                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=color)
-                        self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' could not be plotted (DF2): {e}")
-                        continue
-
-        for thr in self.thresholds:
-            self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}")
-
-        event_handles = []
-        if "Event" in self.df1.columns and self.selected_events:
-            cmap = plt.get_cmap("tab10")
-            for i, event_info in enumerate(self.selected_events):
-                row_idx, ev_name = event_info
-                color = cmap(i % 10)
-                try:
-                    row_time = pd.to_datetime(self.df1.loc[row_idx, self.time_column], format="%H:%M:%S")
-                except Exception:
-                    continue
-                ev_sec = (row_time - common_ref).total_seconds()
-                self.ax.axvline(x=ev_sec, color=color, linestyle='dotted')
-                event_handles.append(plt.Line2D([], [], color=color, linestyle='dotted', label=f"{ev_name} (Row {row_idx})"))
-        handles, labels = self.ax.get_legend_handles_labels()
-        if event_handles:
-            handles.extend(event_handles)
-            labels.extend([h.get_label() for h in event_handles])
-        if handles:
-            # Reverse the order so the first added item appears at the top.
-            handles = handles[::-1]
-            labels = labels[::-1]
-            # If more than 10 entries, show only the first 10 (max 5 per column in 2 columns).
-            if len(labels) > 10:
-                handles = handles[:10]
-                labels = labels[:10]
-            ncol = 1 if len(labels) <= 5 else 2
-            # For two columns, place the legend below the chart, centered with increased column spacing.
-            if ncol == 2:
-                self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08), ncol=ncol, columnspacing=2.0)
-            else:
-                self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08))
-
-        self.ax.set_xlabel("Elapsed Time [s]")
-        self.ax.set_ylabel("Values")
-        self.ax.ticklabel_format(style='plain', axis='x')
-        self.ax.xaxis.get_offset_text().set_visible(False)
-        self.ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-
-        if self.xy_data:
-            pts = np.array(self.xy_data)
-            if pts.ndim == 2 and pts.shape[1] == 2:
-                try:
-                    self.kdtree = KDTree(pts)
-                except ValueError:
-                    self.kdtree = None
-                    messagebox.showerror("Plot Error", "Column not plottable.")
-                    return
-            else:
-                self.kdtree = None
-        else:
-            self.kdtree = None
-
-        # Set the chart title with sufficient pad.
-        self.ax.set_title(self.chart_title_entry.get(), pad=15)
-        self.canvas.draw()
-
+    # on_hover method using the built-in 'contains' function for each line.
     def on_hover(self, event):
-        if event.inaxes != self.ax or self.kdtree is None:
+        if event.inaxes != self.ax:
             if self.annot.get_visible():
                 self.annot.set_visible(False)
                 self.canvas.draw_idle()
             return
 
-        query_point = (event.xdata, event.ydata)
-        dist, idx = self.kdtree.query(query_point)
-        tolerance = 10
-        if dist < tolerance:
-            pts = np.array(self.xy_data)
-            x_val, y_val = pts[idx]
-            self.annot.xy = (x_val, y_val)
-            self.annot.set_text(f"x={x_val:.2f}\ny={y_val:.2f}")
-            self.annot.set_visible(True)
+        for line in self.ax.get_lines():
+            contains, attrd = line.contains(event)
+            if contains:
+                ind = attrd.get('ind', [])
+                if len(ind) > 0:
+                    index = ind[0]
+                    xdata = line.get_xdata()
+                    ydata = line.get_ydata()
+                    x, y = xdata[index], ydata[index]
+                    self.annot.xy = (x, y)
+                    self.annot.set_text(line.get_label())
+                    self.annot.get_bbox_patch().set_facecolor('yellow')
+                    self.annot.get_bbox_patch().set_alpha(0.8)
+                    self.annot.set_visible(True)
+                    self.canvas.draw_idle()
+                    return
+        if self.annot.get_visible():
+            self.annot.set_visible(False)
             self.canvas.draw_idle()
-        else:
-            if self.annot.get_visible():
-                self.annot.set_visible(False)
-                self.canvas.draw_idle()
 
-    # Tooltip methods with 2-second delay:
+    # Modified on_pick: if custom event mode is active, ignore pick events.
+    def on_pick(self, event):
+        if hasattr(self, "custom_event_mode") and self.custom_event_mode:
+            return
+        artist = event.artist
+        # If the picked artist is an annotation, remove it.
+        if isinstance(artist, Annotation):
+            artist.remove()
+            # Remove the annotation from our tracking dictionary.
+            for line, ann in list(self.line_annotations.items()):
+                if ann == artist:
+                    del self.line_annotations[line]
+                    break
+            self.canvas.draw_idle()
+            return
+        # If the picked artist is a line (we expect Line2D objects)
+        from matplotlib.lines import Line2D
+        if isinstance(artist, Line2D):
+            # If an annotation already exists for this line, do nothing.
+            if artist in self.line_annotations:
+                return
+            xdata = artist.get_xdata()
+            ydata = artist.get_ydata()
+            click_x = event.mouseevent.xdata
+            if click_x is None:
+                return
+            # Find the index of the closest data point in the line.
+            idx = (np.abs(np.array(xdata) - click_x)).argmin()
+            x_val = xdata[idx]
+            y_val = ydata[idx]
+            # Create an annotation near the clicked point.
+            ann = self.ax.annotate(
+                artist.get_label(),
+                xy=(x_val, y_val),
+                xytext=(10, 10),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round", fc="w"),
+                arrowprops=dict(arrowstyle="->"),
+                picker=True  # Make sure the annotation is pickable
+            )
+            self.line_annotations[artist] = ann
+            self.canvas.draw_idle()
+
+    def reset_view(self):
+        self.selected_df1_columns.clear()
+        if self.df2_listbox is not None:
+            self.selected_df2_columns.clear()
+        self.df1_listbox.selection_clear(0, tk.END)
+        if self.df2_listbox is not None:
+            self.df2_listbox.selection_clear(0, tk.END)
+        self.ax.clear()
+        self.canvas.draw()
+
     def on_listbox_hover(self, event):
         listbox = event.widget
         index = listbox.nearest(event.y)
@@ -710,30 +646,28 @@ class InteractivePlotApp(tk.Toplevel):
     def choose_column_dialog(self, columns, prompt):
         dialog = tk.Toplevel(self)
         dialog.title(prompt)
-        label = tk.Label(dialog, text="Select a column:")
-        label.pack(padx=10, pady=10)
-        max_length = max(len(col) for col in columns)
-        combo_width = max_length + 2
-        selected = tk.StringVar(value=columns[0])
-        combobox = ttk.Combobox(dialog, textvariable=selected, values=columns, state="readonly", width=combo_width)
-        combobox.pack(padx=10, pady=10)
-        result = {}
+        tk.Label(dialog, text="Select a column:").pack(padx=10, pady=10)
+        selected = tk.StringVar(dialog)
+        selected.set(columns[0])
+        option_menu = tk.OptionMenu(dialog, selected, *columns)
+        option_menu.pack(padx=10, pady=10)
         def on_ok():
-            result["value"] = selected.get()
             dialog.destroy()
-        ok_button = ttk.Button(dialog, text="OK", command=on_ok)
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
         ok_button.pack(padx=10, pady=10)
+        dialog.grab_set()
         dialog.wait_window()
-        return result.get("value")
+        return selected.get()
 
     def choose_color_df1(self):
-        if not self.current_df1_plotted:
-            messagebox.showwarning("No Plotted Column", "No columns are currently plotted.")
+        if not self.selected_df1_columns:
+            messagebox.showwarning("No Plotted Column", "No columns are currently selected.")
             return
-        if len(self.current_df1_plotted) == 1:
-            column = self.current_df1_plotted[0]
+        columns = [col for col in self.df1.columns if col in self.selected_df1_columns]
+        if len(columns) == 1:
+            column = columns[0]
         else:
-            column = self.choose_column_dialog(self.current_df1_plotted, "Select Column")
+            column = self.choose_column_dialog(columns, "Select Column")
             if not column:
                 return
         color = colorchooser.askcolor()[1]
@@ -742,13 +676,14 @@ class InteractivePlotApp(tk.Toplevel):
             self.create_plot()
 
     def choose_color_df2(self):
-        if not self.current_df2_plotted:
-            messagebox.showwarning("No Plotted Column", "No DF2 columns are currently plotted.")
+        if not self.selected_df2_columns:
+            messagebox.showwarning("No Plotted Column", "No DF2 columns are currently selected.")
             return
-        if len(self.current_df2_plotted) == 1:
-            column = self.current_df2_plotted[0]
+        columns = [col for col in self.df2.columns if col in self.selected_df2_columns]
+        if len(columns) == 1:
+            column = columns[0]
         else:
-            column = self.choose_column_dialog(self.current_df2_plotted, "Select DF2 Column")
+            column = self.choose_column_dialog(columns, "Select DF2 Column")
             if not column:
                 return
         color = colorchooser.askcolor()[1]
@@ -786,45 +721,16 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             messagebox.showinfo("Remove Event", "No events to remove.")
 
-    def initiate_custom_event(self):
-        custom_event = askstring("Custom Event", "Enter custom event name:")
-        if custom_event:
-            self.custom_event_mode = True
-            self.custom_event_name = custom_event
-            if custom_event not in [ev[1] for ev in self.custom_events]:
-                self.custom_events.append(custom_event)
-            messagebox.showinfo("Custom Event", "Click on the chart to add the event.")
-            self.custom_event_cid = self.canvas.mpl_connect("button_press_event", self.on_custom_event_click)
-
-    def on_custom_event_click(self, event):
-        if self.custom_event_mode and event.inaxes == self.ax:
-            common_ref = self.get_common_reference()
-            t_sec = (self.df1_time - common_ref).dt.total_seconds()
-            idx = (np.abs(t_sec - event.xdata)).idxmin()
-            self.df1.loc[idx, "Event"] = self.custom_event_name
-            event_tuple = (idx+2, self.custom_event_name)
-            if event_tuple not in self.all_events:
-                self.all_events.append(event_tuple)
-                formatted_events = [self.format_event(ev) for ev in self.all_events]
-                self.event_menu.update_options(formatted_events)
-            if event_tuple not in self.selected_events:
-                self.selected_events.append(event_tuple)
-            messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at time {self.df1.loc[idx, self.time_column]}")
-            self.canvas.mpl_disconnect(self.custom_event_cid)
-            self.custom_event_mode = False
-            self.create_plot()
-
     def plot_difference(self):
         self.data_operation = 'computed_difference'
         selections = []
-        selections.extend([("DF1", self.df1_listbox.get(idx)) for idx in self.df1_listbox.curselection()])
+        selections.extend([("DF1", col) for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
-            selections.extend([("DF2", self.df2_listbox.get(idx)) for idx in self.df2_listbox.curselection()])
+            selections.extend([("DF2", col) for col in self.selected_df2_columns])
         if len(selections) != 2:
             messagebox.showerror("Plot Difference", "Select exactly two columns (from DF1 and/or DF2) for difference.")
             self.data_operation = 'normal'
             return
-
         src1, col1 = selections[0]
         src2, col2 = selections[1]
         series1 = self.df1[col1] if src1 == "DF1" else self.df2[col1]
@@ -835,8 +741,8 @@ class InteractivePlotApp(tk.Toplevel):
         t1_sec = (t1 - common_ref).dt.total_seconds().values
         t2_sec = (t2 - common_ref).dt.total_seconds().values
         common_time = np.union1d(t1_sec, t2_sec)
-        interp1 = np.interp(common_time, t1_sec, series1.values)
-        interp2 = np.interp(common_time, t2_sec, series2.values)
+        interp1 = np.interp(common_time, t1_sec, pd.to_numeric(series1, errors='coerce').values)
+        interp2 = np.interp(common_time, t2_sec, pd.to_numeric(series2, errors='coerce').values)
         self.computed_series = interp1 - interp2
         self.common_time = common_time
         self.computed_label = f"Difference: {src1}:{col1} - {src2}:{col2}"
@@ -845,9 +751,9 @@ class InteractivePlotApp(tk.Toplevel):
     def plot_moving_average(self):
         self.data_operation = 'moving_average'
         selections = []
-        selections.extend([("DF1", self.df1_listbox.get(idx)) for idx in self.df1_listbox.curselection()])
+        selections.extend([("DF1", col) for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
-            selections.extend([("DF2", self.df2_listbox.get(idx)) for idx in self.df2_listbox.curselection()])
+            selections.extend([("DF2", col) for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average", "Select at least one column for moving average.")
             self.data_operation = 'normal'
@@ -866,9 +772,9 @@ class InteractivePlotApp(tk.Toplevel):
     def plot_moving_average_time(self):
         self.data_operation = 'moving_average_time'
         selections = []
-        selections.extend([("DF1", self.df1_listbox.get(idx)) for idx in self.df1_listbox.curselection()])
+        selections.extend([("DF1", col) for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
-            selections.extend([("DF2", self.df2_listbox.get(idx)) for idx in self.df2_listbox.curselection()])
+            selections.extend([("DF2", col) for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average (Time)", "Select at least one column for moving average by time window.")
             self.data_operation = 'normal'
@@ -886,43 +792,42 @@ class InteractivePlotApp(tk.Toplevel):
 
     def save_plot_to_excel(self):
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
-                                                filetypes=[("Excel files", "*.xlsx")])
+                                                 filetypes=[("Excel files", "*.xlsx")])
         if not file_path:
             return
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Plot"
         start_row = ws.max_row + 1 if ws["A1"].value is not None else 1
-
         if self.data_operation in ['computed_difference', 'moving_average', 'moving_average_time']:
             if self.data_operation == 'computed_difference' and self.computed_series is not None:
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column], self.computed_label: self.computed_series})
             elif self.data_operation == 'moving_average':
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+                df1_selected = list(self.selected_df1_columns)
                 for col in df1_selected:
                     ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
                     result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
                 if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
+                    df2_selected = list(self.selected_df2_columns)
                     for col in df2_selected:
                         ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
                         result_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
             elif self.data_operation == 'moving_average_time':
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+                df1_selected = list(self.selected_df1_columns)
                 for col in df1_selected:
                     t = self.df1_time
-                    series = self.df1[col].copy()
+                    series = pd.to_numeric(self.df1[col], errors='coerce')
                     series.index = t
                     window_str = f"{self.ma_window}s"
                     ma = series.rolling(window=window_str, min_periods=1).mean()
                     result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
                 if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
+                    df2_selected = list(self.selected_df2_columns)
                     for col in df2_selected:
                         t = self.df2_time
-                        series = self.df2[col].copy()
+                        series = pd.to_numeric(self.df2[col], errors='coerce')
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         ma = series.rolling(window=window_str, min_periods=1).mean()
@@ -937,11 +842,11 @@ class InteractivePlotApp(tk.Toplevel):
             start_row = start_row + result_df.shape[0] + 2
         else:
             df_to_save = pd.DataFrame({self.time_column: pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')})
-            df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+            df1_selected = list(self.selected_df1_columns)
             for col in df1_selected:
                 df_to_save[f"DF1: {col}"] = self.df1[col]
             if self.df2 is not None and self.df2_listbox is not None:
-                df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
+                df2_selected = list(self.selected_df2_columns)
                 for col in df2_selected:
                     df_to_save[f"DF2: {col}"] = self.df2[col]
             if "Event" in self.df1.columns:
@@ -951,7 +856,6 @@ class InteractivePlotApp(tk.Toplevel):
             for r_idx, row in enumerate(df_to_save.itertuples(index=False), start=2):
                 for c_idx, value in enumerate(row, start=1):
                     ws.cell(row=r_idx, column=c_idx, value=value)
-
         headers = [cell.value for cell in ws[1]]
         if "Event" in headers:
             event_col_index = headers.index("Event") + 1
@@ -965,7 +869,6 @@ class InteractivePlotApp(tk.Toplevel):
             else:
                 event_val = None
             ws.cell(row=r, column=new_event_col, value=event_val)
-
         orig_size = self.fig.get_size_inches()
         new_size = orig_size * (4/7)
         self.fig.set_size_inches(new_size)
@@ -985,17 +888,109 @@ class InteractivePlotApp(tk.Toplevel):
         finally:
             buf.close()
 
+    def save_to_excel(self):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"RapidAnalysis_{timestamp}.xlsx"
+        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                 filetypes=[("Excel files", "*.xlsx")],
+                                                 initialfile=default_filename)
+        if not file_path:
+            return
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Data0"
+        if self.data_operation in ['computed_difference', 'moving_average', 'moving_average_time']:
+            if self.data_operation == 'computed_difference' and self.computed_series is not None:
+                data_df = pd.DataFrame({self.time_column: self.df1[self.time_column], self.computed_label: self.computed_series})
+            elif self.data_operation == 'moving_average':
+                data_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
+                df1_selected = list(self.selected_df1_columns)
+                for col in df1_selected:
+                    ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
+                    data_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                if self.df2 is not None:
+                    df2_selected = list(self.selected_df2_columns)
+                    for col in df2_selected:
+                        ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
+                        data_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
+            elif self.data_operation == 'moving_average_time':
+                data_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
+                df1_selected = list(self.selected_df1_columns)
+                for col in df1_selected:
+                    t = self.df1_time
+                    series = self.df1[col].copy()
+                    series.index = t
+                    window_str = f"{self.ma_window}s"
+                    ma = series.rolling(window=window_str, min_periods=1).mean()
+                    data_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
+                if self.df2 is not None:
+                    df2_selected = list(self.selected_df2_columns)
+                    for col in df2_selected:
+                        t = self.df2_time
+                        series = self.df2[col].copy()
+                        series.index = t
+                        window_str = f"{self.ma_window}s"
+                        ma = series.rolling(window=window_str, min_periods=1).mean()
+                        data_df[f"MA Time ({self.ma_window}s): DF2:{col}"] = ma
+            if "Event" in self.df1.columns:
+                data_df["Event"] = self.df1["Event"]
+        else:
+            data_df = pd.DataFrame({self.time_column: pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')})
+            df1_selected = list(self.selected_df1_columns)
+            for col in df1_selected:
+                data_df[f"DF1: {col}"] = self.df1[col]
+            if self.df2 is not None:
+                df2_selected = list(self.selected_df2_columns)
+                for col in df2_selected:
+                    data_df[f"DF2: {col}"] = self.df2[col]
+            if "Event" in self.df1.columns:
+                data_df["Event"] = self.df1["Event"]
+        for c_idx, header in enumerate(data_df.columns, start=1):
+            ws.cell(row=1, column=c_idx, value=header)
+        for r_idx, row in enumerate(data_df.itertuples(index=False), start=2):
+            for c_idx, value in enumerate(row, start=1):
+                ws.cell(row=r_idx, column=c_idx, value=value)
+        headers = [cell.value for cell in ws[1]]
+        if "Event" in headers:
+            event_col_index = headers.index("Event") + 1
+            ws.delete_cols(event_col_index)
+        new_event_col = ws.max_column + 1
+        ws.cell(row=1, column=new_event_col, value="Event")
+        num_rows = ws.max_row
+        for r in range(2, num_rows+1):
+            if r-2 < len(self.df1):
+                event_val = self.df1.iloc[r-2].get("Event", None)
+            else:
+                event_val = None
+            ws.cell(row=r, column=new_event_col, value=event_val)
+        orig_size = self.fig.get_size_inches()
+        new_size = orig_size * (4/7)
+        self.fig.set_size_inches(new_size)
+        self.ax.set_title(self.chart_title_entry.get(), pad=15)
+        buf = BytesIO()
+        self.fig.savefig(buf, format='png', bbox_inches="tight", dpi=150)
+        buf.seek(0)
+        excel_img = ExcelImage(buf)
+        self.fig.set_size_inches(orig_size)
+        img_cell = f"{openpyxl.utils.get_column_letter(ws.max_column + 2)}1"
+        ws.add_image(excel_img, img_cell)
+        try:
+            wb.save(file_path)
+            messagebox.showinfo("Saved", f"Plot and data saved successfully to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save to Excel file: {e}")
+        finally:
+            buf.close()
+
     def append_plot_to_excel(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
         if not file_path:
             return
-
         try:
             wb = openpyxl.load_workbook(file_path)
         except Exception as e:
             messagebox.showerror("Error", f"Cannot open Excel file: {e}")
             return
-
         sheet_dialog = tk.Toplevel(self)
         sheet_dialog.title("Select or Create Sheet")
         sheet_dialog.geometry("350x200")
@@ -1003,10 +998,8 @@ class InteractivePlotApp(tk.Toplevel):
         content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         confirm_frame = ttk.Frame(sheet_dialog)
         confirm_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
-
         sheet_var = tk.StringVar()
         new_sheet_var = tk.StringVar()
-
         select_frame = ttk.Frame(content_frame)
         select_frame.pack(fill=tk.BOTH, expand=True)
         ttk.Label(select_frame, text="Select existing sheet:").pack(pady=5)
@@ -1015,22 +1008,18 @@ class InteractivePlotApp(tk.Toplevel):
         sheet_dropdown.set(wb.sheetnames[0])
         add_page_btn = ttk.Button(select_frame, text="Add New Page", command=lambda: switch_to_new_sheet())
         add_page_btn.pack(pady=5)
-
         new_sheet_frame = ttk.Frame(content_frame)
         back_btn = ttk.Button(new_sheet_frame, text="← Back to Selection", command=lambda: switch_to_existing_sheet())
         back_btn.pack(pady=5, anchor="w")
         ttk.Label(new_sheet_frame, text="Enter new sheet name:").pack(pady=5)
         new_sheet_entry = ttk.Entry(new_sheet_frame, textvariable=new_sheet_var)
         new_sheet_entry.pack(pady=5)
-
         def switch_to_new_sheet():
             select_frame.pack_forget()
             new_sheet_frame.pack(fill=tk.BOTH, expand=True)
-
         def switch_to_existing_sheet():
             new_sheet_frame.pack_forget()
             select_frame.pack(fill=tk.BOTH, expand=True)
-
         def on_confirm():
             if new_sheet_frame.winfo_ismapped():
                 new_sheet_name = new_sheet_var.get().strip()
@@ -1047,19 +1036,16 @@ class InteractivePlotApp(tk.Toplevel):
                 ws = wb[selected_sheet]
                 save_full_data = False
             sheet_dialog.destroy()
-
             max_col = ws.max_column
             empty_col = max_col + 2
-
             formatted_time = pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')
-
             if save_full_data:
                 df_to_save = pd.DataFrame({self.time_column: formatted_time})
-                df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+                df1_selected = list(self.selected_df1_columns)
                 for col in df1_selected:
                     df_to_save[f"DF1: {col}"] = self.df1[col]
                 if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = [self.df2_listbox.get(idx) for idx in self.df2_listbox.curselection()]
+                    df2_selected = list(self.selected_df2_columns)
                     for col in df2_selected:
                         df_to_save[f"DF2: {col}"] = self.df2[col]
                 if "Event" in self.df1.columns:
@@ -1074,12 +1060,12 @@ class InteractivePlotApp(tk.Toplevel):
                 if self.data_operation == 'computed_difference' and self.computed_series is not None:
                     result_df[self.computed_label] = self.computed_series
                 elif self.data_operation == 'moving_average':
-                    df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+                    df1_selected = list(self.selected_df1_columns)
                     for col in df1_selected:
                         ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
                         result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
                 elif self.data_operation == 'moving_average_time':
-                    df1_selected = [self.df1_listbox.get(idx) for idx in self.df1_listbox.curselection()]
+                    df1_selected = list(self.selected_df1_columns)
                     for col in df1_selected:
                         t = self.df1_time
                         series = self.df1[col].copy()
@@ -1087,14 +1073,12 @@ class InteractivePlotApp(tk.Toplevel):
                         window_str = f"{self.ma_window}s"
                         ma = series.rolling(window=window_str, min_periods=1).mean()
                         result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
-
                 start_row = 1
                 for c_idx, header in enumerate(result_df.columns, start=1):
                     ws.cell(row=start_row, column=empty_col + c_idx, value=header)
                 for r_idx, row in enumerate(result_df.itertuples(index=False), start=start_row+1):
                     for c_idx, value in enumerate(row, start=1):
                         ws.cell(row=r_idx, column=empty_col + c_idx, value=value)
-
             headers = [cell.value for cell in ws[1]]
             if "Event" in headers:
                 event_col_index = headers.index("Event") + 1
@@ -1108,7 +1092,6 @@ class InteractivePlotApp(tk.Toplevel):
                 else:
                     event_val = None
                 ws.cell(row=r, column=new_event_col, value=event_val)
-
             orig_size = self.fig.get_size_inches()
             new_size = orig_size * (4/7)
             self.fig.set_size_inches(new_size)
@@ -1127,7 +1110,6 @@ class InteractivePlotApp(tk.Toplevel):
                 messagebox.showerror("Error", f"Failed to append to Excel file: {e}")
             finally:
                 buf.close()
-
         confirm_button = ttk.Button(confirm_frame, text="Confirm", command=on_confirm)
         confirm_button.pack(pady=10)
 
@@ -1138,24 +1120,188 @@ class InteractivePlotApp(tk.Toplevel):
         self.ma_window = None
         self.create_plot()
 
+    def create_plot(self):
+        self.ax.clear()
+        self.xy_data = []
+        common_ref = self.get_common_reference()
+        default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+        if self.data_operation == 'computed_difference':
+            if self.common_time is None or self.computed_series is None:
+                messagebox.showerror("Plot Difference", "No computed difference data available.")
+            else:
+                self.ax.plot(self.common_time, self.computed_series,
+                             label=self.computed_label, color='purple', picker=5)
+                self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
+        elif self.data_operation == 'moving_average':
+            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
+            for i, col in enumerate(df1_selected):
+                try:
+                    t = self.df1_time
+                    t_sec = (t - common_ref).dt.total_seconds().values
+                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
+                    self.colors_df1.setdefault(col, color)
+                    self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF1:{col}", color=color, picker=5)
+                    self.xy_data.extend(list(zip(t_sec, y_vals)))
+                except Exception as e:
+                    messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF1) failed: {e}")
+            if self.df2 is not None:
+                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
+                for i, col in enumerate(df2_selected):
+                    try:
+                        t = self.df2_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
+                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
+                        self.colors_df2.setdefault(col, color)
+                        self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF2:{col}", color=color, picker=5)
+                        self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    except Exception as e:
+                        messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF2) failed: {e}")
+        elif self.data_operation == 'moving_average_time':
+            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
+            for i, col in enumerate(df1_selected):
+                try:
+                    t = self.df1_time
+                    t_sec = (t - common_ref).dt.total_seconds().values
+                    series = pd.to_numeric(self.df1[col], errors='coerce')
+                    series.index = t
+                    window_str = f"{self.ma_window}s"
+                    y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
+                    self.colors_df1.setdefault(col, color)
+                    self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=color, picker=5)
+                    self.xy_data.extend(list(zip(t_sec, y_vals)))
+                except Exception as e:
+                    messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
+            if self.df2 is not None:
+                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
+                for i, col in enumerate(df2_selected):
+                    try:
+                        t = self.df2_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
+                        series = pd.to_numeric(self.df2[col], errors='coerce')
+                        series.index = t
+                        window_str = f"{self.ma_window}s"
+                        y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
+                        self.colors_df2.setdefault(col, color)
+                        self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=color, picker=5)
+                        self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    except Exception as e:
+                        messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
+        else:
+            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
+            for i, col in enumerate(df1_selected):
+                try:
+                    t = self.df1_time
+                    t_sec = (t - common_ref).dt.total_seconds().values
+                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                    y_vals = np.nan_to_num(y_vals, nan=0.0)
+                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
+                    self.colors_df1.setdefault(col, color)
+                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=color, picker=5)
+                    self.xy_data.extend(list(zip(t_sec, y_vals)))
+                except Exception as e:
+                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
+                    continue
+            if self.df2 is not None:
+                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
+                for i, col in enumerate(df2_selected):
+                    try:
+                        t = self.df2_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
+                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
+                        y_vals = np.nan_to_num(y_vals, nan=0.0)
+                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
+                        self.colors_df2.setdefault(col, color)
+                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=color, picker=5)
+                        self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    except Exception as e:
+                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
+                        continue
+
+        for thr in self.thresholds:
+            self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}")
+
+        event_handles = []
+        if "Event" in self.df1.columns and self.selected_events:
+            cmap = plt.get_cmap("tab10")
+            for i, event_info in enumerate(self.selected_events):
+                row_idx, ev_name = event_info
+                color = cmap(i % 10)
+                if row_idx in self.custom_event_plot_times:
+                    ev_sec = self.custom_event_plot_times[row_idx]
+                    timestamp = (common_ref + pd.Timedelta(seconds=ev_sec)).strftime('%H:%M:%S')
+                else:
+                    try:
+                        row_time = pd.to_datetime(self.df1.loc[row_idx, self.time_column], format="%H:%M:%S")
+                        ev_sec = (row_time - common_ref).total_seconds()
+                        timestamp = row_time.strftime('%H:%M:%S')
+                    except Exception:
+                        continue
+                self.ax.axvline(x=ev_sec, color=color, linestyle='dotted')
+                row_display = row_idx + 2
+                event_handles.append(plt.Line2D([], [], color=color, linestyle='dotted', 
+                    label=f"{ev_name} (Row {row_display}, Timestamp: {timestamp}, {ev_sec:.1f}s)"))
+        handles, labels = self.ax.get_legend_handles_labels()
+        if event_handles:
+            handles.extend(event_handles)
+            labels.extend([h.get_label() for h in event_handles])
+        if handles:
+            handles = handles[::-1]
+            labels = labels[::-1]
+            if len(labels) > 10:
+                handles = handles[:10]
+                labels = labels[:10]
+            ncol = 1 if len(labels) <= 5 else 2
+            self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08),
+                           ncol=ncol, columnspacing=2.0)
+        self.ax.set_xlabel("Elapsed Time [s]")
+        self.ax.set_ylabel("Values")
+        self.ax.ticklabel_format(style='plain', axis='x')
+        self.ax.xaxis.get_offset_text().set_visible(False)
+        self.ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        # Disable scientific notation for the y-axis
+        self.ax.ticklabel_format(style='plain', axis='y')
+        self.ax.yaxis.get_offset_text().set_visible(False)
+
+        if self.xy_data:
+            pts = np.array(self.xy_data, dtype=float)
+            pts = pts[np.all(np.isfinite(pts), axis=1)]
+            if pts.ndim == 2 and pts.shape[1] == 2 and pts.shape[0] > 0:
+                try:
+                    from scipy.spatial import KDTree
+                    self.kdtree = KDTree(pts)
+                except ValueError as e:
+                    self.kdtree = None
+                    messagebox.showerror("Plot Error", f"KDTree construction failed: {e}")
+                    return
+            else:
+                self.kdtree = None
+        else:
+            self.kdtree = None
+
+        self.ax.set_title(self.chart_title_entry.get(), pad=15)
+        self.canvas.draw()
+
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
     if os.path.isfile('output0.csv'):
         df1 = pd.read_csv('output0.csv')
-    else:  
+    else:
         messagebox.showerror("Error", "No data found")
         return
     if os.path.isfile('output1.csv'):
         df2 = pd.read_csv('output1.csv')
-    
     if checkbox_align:
         ref_time1 = pd.to_datetime(start_time1_entry.get(), format='%H:%M:%S')
         column_date1 = df1.columns[0]
         df1 = apply_formulas_to_column(df1, ref_time1, column_date1)
-        
         if os.path.isfile('output1.csv'):
             ref_time2 = pd.to_datetime(start_time2_entry.get(), format='%H:%M:%S')
             column_date2 = df2.columns[0]
-            df2 = apply_formulas_to_column(df2, ref_time2, column_date2) 
+            df2 = apply_formulas_to_column(df2, ref_time2, column_date2)
             df1, df2, delta_sec = align_dataframes(df1, df2, column_date1, column_date2)
             df1, df2 = process_event(checkbox_event, df1, df2=df2, options_file='options_event.txt', sec=delta_sec)
             launch_interactive_plot(main_frame, df1, df2=df2)
