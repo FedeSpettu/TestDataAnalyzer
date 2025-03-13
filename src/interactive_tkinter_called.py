@@ -137,7 +137,6 @@ class PaginatedOptionMenu:
     def __init__(self, master, variable, options, command=None, page_size=10):
         self.master = master
         self.variable = variable
-        # If the options list is empty, set a default value.
         if not options:
             options = ["Select Event"]
         self.all_options = options
@@ -241,7 +240,7 @@ class InteractivePlotApp(tk.Toplevel):
         self.selected_events = []
         self.custom_events = []
         self.custom_event_plot_times = {}
-
+        self.event_line_labels = {}
         self.data_operation = 'normal'
         self.computed_series = None
         self.common_time = None
@@ -259,8 +258,13 @@ class InteractivePlotApp(tk.Toplevel):
         self.tooltip_index = None
         self.tooltip_widget = None
 
-        # Dictionary to keep track of annotations for lines
+        # Dictionary to keep track of annotations for lines (from pick events)
         self.line_annotations = {}
+        # List to store manual annotations so they persist across replotting.
+        # (If an annotation is removed, it is also removed from this list.)
+        self.manual_annotations = []
+        # Temporary storage for event lines (to update legend later)
+        self.event_lines = []
 
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -284,7 +288,7 @@ class InteractivePlotApp(tk.Toplevel):
         self.toolbar.update()
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # Create annotation for hover (this is separate from the pick toggle)
+        # Create annotation for hover
         self.annot = self.ax.annotate("", xy=(0, 0), xytext=(10, 0),
                                        textcoords="offset points", ha="left", va="center",
                                        bbox=dict(boxstyle="round", fc="w"),
@@ -322,7 +326,6 @@ class InteractivePlotApp(tk.Toplevel):
             self.df2_filter_var = tk.StringVar()
             self.df2_filter_entry = ttk.Entry(df2_frame, textvariable=self.df2_filter_var)
             self.df2_filter_entry.pack(fill=tk.X, padx=5, pady=2)
-            self.df2_filter_entry.bind("<Return>", lambda event: self.populate_df2_listbox())
             self.df2_listbox = tk.Listbox(df2_frame, selectmode=tk.MULTIPLE, exportselection=False, height=3)
             self.df2_listbox.pack(fill=tk.BOTH, padx=5, pady=5)
             self.df2_listbox.bind("<Motion>", self.on_listbox_hover)
@@ -354,7 +357,7 @@ class InteractivePlotApp(tk.Toplevel):
         self.ma_btn.pack(fill=tk.X, padx=5, pady=2)
         self.ma_time_btn = ttk.Button(data_ops_frame, text="Plot MA (Time Window)", command=self.plot_moving_average_time)
         self.ma_time_btn.pack(fill=tk.X, padx=5, pady=2)
-        # Threshold section with "Remove Last" button moved to a new row
+        # Threshold section
         thresh_frame = ttk.LabelFrame(right_frame, text="Thresholds")
         thresh_frame.pack(fill=tk.X, pady=2, padx=5)
         thresh_inner = ttk.Frame(thresh_frame)
@@ -489,7 +492,6 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             return t1.min()
 
-    # Modified on_custom_event_click: no column label annotation will be added
     def on_custom_event_click(self, event):
         if self.custom_event_mode and event.inaxes == self.ax:
             common_ref = self.get_common_reference()
@@ -516,7 +518,6 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showinfo("Custom Event", "Click on the chart to add the event.")
             self.custom_event_cid = self.canvas.mpl_connect("button_press_event", self.on_custom_event_click)
 
-    # on_hover method using the built-in 'contains' function for each line.
     def on_hover(self, event):
         if event.inaxes != self.ax:
             if self.annot.get_visible():
@@ -535,7 +536,8 @@ class InteractivePlotApp(tk.Toplevel):
                     x, y = xdata[index], ydata[index]
                     self.annot.xy = (x, y)
                     self.annot.set_text(line.get_label())
-                    self.annot.get_bbox_patch().set_facecolor('yellow')
+                    # Ensure annotation background is white
+                    self.annot.get_bbox_patch().set_facecolor('w')
                     self.annot.get_bbox_patch().set_alpha(0.8)
                     self.annot.set_visible(True)
                     self.canvas.draw_idle()
@@ -544,47 +546,71 @@ class InteractivePlotApp(tk.Toplevel):
             self.annot.set_visible(False)
             self.canvas.draw_idle()
 
-    # Modified on_pick: if custom event mode is active, ignore pick events.
     def on_pick(self, event):
         if hasattr(self, "custom_event_mode") and self.custom_event_mode:
             return
+
         artist = event.artist
-        # If the picked artist is an annotation, remove it.
+
+        # If the picked object is an annotation, remove it and also from the persistent list.
         if isinstance(artist, Annotation):
             artist.remove()
-            # Remove the annotation from our tracking dictionary.
+            if artist in self.manual_annotations:
+                self.manual_annotations.remove(artist)
             for line, ann in list(self.line_annotations.items()):
                 if ann == artist:
                     del self.line_annotations[line]
                     break
             self.canvas.draw_idle()
             return
-        # If the picked artist is a line (we expect Line2D objects)
+
         from matplotlib.lines import Line2D
         if isinstance(artist, Line2D):
-            # If an annotation already exists for this line, do nothing.
+            # If already annotated, do nothing.
             if artist in self.line_annotations:
                 return
+            
             xdata = artist.get_xdata()
-            ydata = artist.get_ydata()
-            click_x = event.mouseevent.xdata
-            if click_x is None:
-                return
-            # Find the index of the closest data point in the line.
-            idx = (np.abs(np.array(xdata) - click_x)).argmin()
-            x_val = xdata[idx]
-            y_val = ydata[idx]
-            # Create an annotation near the clicked point.
-            ann = self.ax.annotate(
-                artist.get_label(),
-                xy=(x_val, y_val),
-                xytext=(10, 10),
-                textcoords="offset points",
-                bbox=dict(boxstyle="round", fc="w"),
-                arrowprops=dict(arrowstyle="->"),
-                picker=True  # Make sure the annotation is pickable
-            )
+            # Use the clicked x position if available.
+            x_val = event.mouseevent.xdata if event.mouseevent.xdata is not None else (xdata[0] if len(xdata) > 0 else 0)
+            
+            # Check if it's an event line (vertical dotted line).
+            if artist in self.event_line_labels:
+                y_val = self.ax.get_ylim()[1]  # place the label at the top
+                m = re.match(r"Row \d+ \(([\d\.]+)s\): (.+)", self.event_line_labels[artist])
+                if m:
+                    elapsed = m.group(1)
+                    ev_name = m.group(2)
+                    text = f"{ev_name} ({elapsed}s)"
+                else:
+                    text = self.event_line_labels[artist]
+                ann = self.ax.annotate(
+                    text,
+                    xy=(x_val, y_val),
+                    xytext=(0, 5),  # Small offset from the top
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
+                    bbox=dict(boxstyle="round,pad=0.3", fc="w", alpha=0.8),
+                    arrowprops=dict(arrowstyle="->", color="black"),
+                    picker=True
+                )
+            else:
+                y_val = event.mouseevent.ydata if event.mouseevent.ydata is not None else self.ax.get_ylim()[0]
+                text = artist.get_label()
+                ann = self.ax.annotate(
+                    text,
+                    xy=(x_val, y_val),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    bbox=dict(boxstyle="round", fc="w"),
+                    arrowprops=dict(arrowstyle="->"),
+                    picker=True
+                )
+
             self.line_annotations[artist] = ann
+            self.manual_annotations.append(ann)
             self.canvas.draw_idle()
 
     def reset_view(self):
@@ -1121,7 +1147,19 @@ class InteractivePlotApp(tk.Toplevel):
         self.create_plot()
 
     def create_plot(self):
+        # --- Preserve manual annotations from pick events ---
+        # Save only annotations that are still in self.manual_annotations.
+        saved_manual_annotations = []
+        for ann in self.manual_annotations:
+            saved_manual_annotations.append({
+                'text': ann.get_text(),
+                'xy': ann.xy,
+                'xytext': ann.get_position()
+            })
+        # Clear the persistent list so that removed annotations are not re-added.
+        self.manual_annotations = []
         self.ax.clear()
+        self.event_line_labels = {}  # Clear old event labels.
         self.xy_data = []
         common_ref = self.get_common_reference()
         default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -1222,10 +1260,11 @@ class InteractivePlotApp(tk.Toplevel):
                         messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
                         continue
 
+        # Plot threshold lines.
         for thr in self.thresholds:
-            self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}")
+            self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}", picker=5)
 
-        event_handles = []
+        # --- Event Lines ---
         if "Event" in self.df1.columns and self.selected_events:
             cmap = plt.get_cmap("tab10")
             for i, event_info in enumerate(self.selected_events):
@@ -1233,22 +1272,28 @@ class InteractivePlotApp(tk.Toplevel):
                 color = cmap(i % 10)
                 if row_idx in self.custom_event_plot_times:
                     ev_sec = self.custom_event_plot_times[row_idx]
-                    timestamp = (common_ref + pd.Timedelta(seconds=ev_sec)).strftime('%H:%M:%S')
                 else:
                     try:
                         row_time = pd.to_datetime(self.df1.loc[row_idx, self.time_column], format="%H:%M:%S")
                         ev_sec = (row_time - common_ref).total_seconds()
-                        timestamp = row_time.strftime('%H:%M:%S')
                     except Exception:
                         continue
-                self.ax.axvline(x=ev_sec, color=color, linestyle='dotted')
-                row_display = row_idx + 2
-                event_handles.append(plt.Line2D([], [], color=color, linestyle='dotted', 
-                    label=f"{ev_name} (Row {row_display}, Timestamp: {timestamp}, {ev_sec:.1f}s)"))
+                short_label = f"{ev_name} ({ev_sec:.1f}s)"
+                full_label = f"Row {row_idx+2} ({ev_sec:.1f}s): {ev_name}"
+                line = self.ax.axvline(x=ev_sec, color=color, linestyle='dotted', picker=5, label=short_label)
+                self.event_lines.append((line, full_label))
+                self.xy_data.append((ev_sec, 0))
+                self.event_line_labels[line] = short_label
+        # Update legend: replace event line labels with detailed ones.
         handles, labels = self.ax.get_legend_handles_labels()
-        if event_handles:
-            handles.extend(event_handles)
-            labels.extend([h.get_label() for h in event_handles])
+        if self.event_lines:
+            for line, full_label in self.event_lines:
+                for j, handle in enumerate(handles):
+                    if handle == line:
+                        labels[j] = full_label
+                        break
+            self.event_lines = []
+
         if handles:
             handles = handles[::-1]
             labels = labels[::-1]
@@ -1263,7 +1308,6 @@ class InteractivePlotApp(tk.Toplevel):
         self.ax.ticklabel_format(style='plain', axis='x')
         self.ax.xaxis.get_offset_text().set_visible(False)
         self.ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        # Disable scientific notation for the y-axis
         self.ax.ticklabel_format(style='plain', axis='y')
         self.ax.yaxis.get_offset_text().set_visible(False)
 
@@ -1284,6 +1328,15 @@ class InteractivePlotApp(tk.Toplevel):
             self.kdtree = None
 
         self.ax.set_title(self.chart_title_entry.get(), pad=15)
+        
+        # Re-add only the annotations that were preserved.
+        for ann_data in saved_manual_annotations:
+            ann = self.ax.annotate(ann_data['text'], xy=ann_data['xy'], xytext=ann_data['xytext'],
+                                   textcoords="offset points",
+                                   bbox=dict(boxstyle="round", fc="w"),
+                                   arrowprops=dict(arrowstyle="->"),
+                                   picker=True)
+            self.manual_annotations.append(ann)
         self.canvas.draw()
 
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
