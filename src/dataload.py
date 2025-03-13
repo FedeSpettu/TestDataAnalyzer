@@ -313,13 +313,16 @@ def load_data_mult(file_path):
     #column_selection(output,  drop2, clicked2, file_list2)
 
 # Extract data rows from file 
-def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry2):
-   
+def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry2, stringtime1,
+            stringtime2):
+    global start_time_1, start_time_2
     try:
         global output_path
         directory_path = folder_path + '/' + file_path
         print(directory_path)
-        
+        start_time_datalog = ''
+        start_time_diagnostic = ''
+        start_time_json = ''
         # Regular expression pattern to match 'diagnostic' in a file name
         pattern = re.compile(r'DiagnosticLog', re.IGNORECASE)
  
@@ -330,13 +333,13 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         output_name, start_time_diagnostic=sd.scrub_diagnostic(directory_path)
         if output_name:
             file_path=output_name
-            print("start_time_diagnostic:" ,start_time_diagnostic)
+            #print("start_time_diagnostic:" ,start_time_diagnostic)
             
            
         if output_name == False:
             output_name, start_time_json=sj.scrub_json(directory_path)
             #print(output_name)
-            print("start_time_json:",start_time_json)
+            #print("start_time_json:",start_time_json)
             
 
         if output_name:  
@@ -350,13 +353,12 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         filename = Path(file_path).name  
 
         # Validate format
-        pattern_file = r"^DataLog_\d{6}_\d{6}"
-        if re.match(pattern_file, filename):
-            time_part = filename.split("_")[2] 
-            start_time_datalog = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"  # Convert to HH:MM:SS
-            print(start_time_datalog)  
-        else:
-            print("Invalid filename format")
+        pattern_file = r"^DataLog_\d{6}_(\d{6})"
+        match = re.match(pattern_file, filename)
+        if match:
+            time_part = match.group(1)
+            start_time_datalog = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"
+            #print(start_time_datalog)
 
         keep, keep2 = find_data(file_path)
         delimiter = auto_detect_delimiter(file_path)
@@ -380,8 +382,20 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
            
                 df = pd.concat([df, df1], axis=1)
         output='output'+str(k)+'.csv' 
-        #print(output)
-        #print(df.columns)
+        if output=='output0.csv':
+            if start_time_datalog != '':
+                stringtime1.set(start_time_datalog)
+            elif  start_time_diagnostic != '':
+                stringtime1.set(start_time_diagnostic)
+            elif  start_time_json != '':
+                stringtime1.set(start_time_json)
+        else:
+            if start_time_datalog != '':
+                stringtime2.set(start_time_datalog)
+            elif  start_time_diagnostic != '':
+                stringtime2.set(start_time_diagnostic)
+            elif  start_time_json != '':
+                stringtime2.set(start_time_json)
         
         df.to_csv(output, index=False, header=False)
            
@@ -399,7 +413,7 @@ def truncate_text(text, max_length=30):
         return text[:max_length - 3] + "..."
     return text
 # Allow user to pick folder and load files dropdown 
-def select_folder(file_list, drop1, drop2, clicked1, clicked2, folder_label, file_list2, entry, entry2):
+def select_folder(file_list, drop1, drop2, clicked1, clicked2, folder_label, file_list2, entry, entry2,  start_time1_entry, start_time2_entry):
     
     try:
         global folder_path
@@ -419,13 +433,13 @@ def select_folder(file_list, drop1, drop2, clicked1, clicked2, folder_label, fil
         root=tk.Tk()
         root.withdraw()
         messagebox.showerror("Critical Error", str(e.args))
-    update_option_menu(files, drop1, drop2, clicked1, clicked2, file_list2, entry, entry2, file_list)
+    update_option_menu(files, drop1, drop2, clicked1, clicked2, file_list2, entry, entry2, file_list, start_time1_entry, start_time2_entry)
 
 # Allow selecting Excel output folder 
 
       
 # Update dropdown menus with new options  
-def update_option_menu(files1, drop1, drop2, clicked1, clicked2, file_list2, entry, entry2, file_list):
+def update_option_menu(files1, drop1, drop2, clicked1, clicked2, file_list2, entry, entry2, file_list, start_time1_entry, start_time2_entry):
     try:
         global files
         drop1["menu"].delete(0, "end")
@@ -437,7 +451,7 @@ def update_option_menu(files1, drop1, drop2, clicked1, clicked2, file_list2, ent
             if search_term in file_name.lower():
                 drop1["menu"].add_command(
                     label=file_name,
-                    command=lambda value=file_name: load_file(drop1, drop2, value, clicked2, file_list2, clicked1, entry2, file_list)
+                    command=lambda value=file_name: load_file(drop1, drop2, value, clicked2, file_list2, clicked1, entry2, file_list, start_time1_entry, start_time2_entry)
                 )
                
         #clicked1.set(files[0])
@@ -452,7 +466,7 @@ import queue
 
 
 class LoadingScreen:
-    def __init__(self, root, value, drop2, clicked2, file_list2, entry2):
+    def __init__(self, root, value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2):
         self.root = root
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -470,7 +484,7 @@ class LoadingScreen:
 
         self.frame_num = 0
         self.loading = True
-        self.load_thread = threading.Thread(target=self.load_big_file, args=(root, value, drop2, clicked2, file_list2, entry2))
+        self.load_thread = threading.Thread(target=self.load_big_file, args=(root, value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2))
         self.load_thread.start()
 
         self.update_frames()
@@ -487,36 +501,34 @@ class LoadingScreen:
         if self.loading:
             self.root.after(1, self.update_frames)  # Adjust the delay as needed
 
-    def load_big_file(self, root, value, drop2, clicked2, file_list2, entry2):
+    def load_big_file(self, root, value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2):
         try:
             while self.loading:
-                # Simulate loading a big file (replace this with your actual file loading logic)
-                load_data(value, drop2, clicked2, file_list2, self.loading_label, root, entry2)
+                load_data(value, drop2, clicked2, file_list2, self.loading_label, root, entry2, stringtime1, stringtime2)
                 self.loading = False
-                #time.sleep(0.1)  # Simulate a short delay for demonstration
         except Exception as e:
         
             messagebox.showerror("Critical Error", str(e.args))
           
 
-def loading_fun(value, drop2, clicked2, file_list2, entry2):
+def loading_fun(value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2):
     root_load = tk.Toplevel()
     root_load.overrideredirect(True)
     screen_width = root_load.winfo_screenwidth()
     screen_height = root_load.winfo_screenheight()
     root_load.geometry(f"+{screen_width // 2 - 165}+{screen_height // 2 - 165}")
-    app = LoadingScreen(root_load, value, drop2, clicked2, file_list2, entry2)
+    app = LoadingScreen(root_load, value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2)
     root_load.mainloop()
 
 
 # Load selected file and get columns
-def load_file(drop1,drop2, value, clicked2, file_list2,clicked1, entry2,file_list, *args):
+def load_file(drop1,drop2, value, clicked2, file_list2,clicked1, entry2,file_list, stringtime1, stringtime2, *args):
     
     try:
         
         clicked1.set(value)
         file_list.insert(tk.END, value)
-        loading_fun(value, drop2, clicked2, file_list2, entry2)
+        loading_fun(value, drop2, clicked2, file_list2, entry2, stringtime1, stringtime2)
         
     except Exception as e:
          root=tk.Tk()

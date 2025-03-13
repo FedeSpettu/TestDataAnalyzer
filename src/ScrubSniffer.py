@@ -253,7 +253,7 @@ def scrub_json(file_name):
             
             #Complete
             print('\nProcedure successfully completed!')
-            return csvDataLogs , entry_time
+            return csvDataLogs , str(entry_time)
     except:
         print('Error: file not correctly formatted')
         try:
@@ -262,4 +262,4 @@ def scrub_json(file_name):
         except:
             # csvDataLogs was never defined, so just pass
             pass
-        return False, False
+        return False, ''

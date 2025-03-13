@@ -208,5 +208,5 @@ def scrub_diagnostic(file_name):
         print("Error: File not correct")
         if os.path.isfile(OutputName):    
             os.remove(OutputName)
-        return False, False
+        return False, ''
 

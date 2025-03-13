@@ -233,6 +233,7 @@ def populate_scrollable_frame(main_frame):
     global buttons
     global clean_paths
     global status
+    global start_time_1, start_time_2
     output_file = None
     output_path = None
     startup=True
@@ -328,7 +329,9 @@ def populate_scrollable_frame(main_frame):
                                           file1_folder_label,
                                           file1_listbox,
                                           file1_file_filter_entry,
-                                          file1_column_filter_entry))
+                                          file1_column_filter_entry,
+                                          stringtime1,
+                                          stringtime2))
     file1_browse_button.grid(row=1, column=0, padx=10, pady=5, sticky="w")
     file1_folder_label = ctk.CTkLabel(file1_frame, text="No folder selected", width=100)
     file1_folder_label.grid(row=1, column=1,columnspan=2, padx=10, pady=5, sticky="w")
@@ -350,6 +353,7 @@ def populate_scrollable_frame(main_frame):
                                           file1_listbox,
                                           file1_listboxfile,
                                           file1_file_filter_entry
+                                          
                                       ))
     upload_files_button.grid(row=0, column=2, padx=10, pady=5)
     
@@ -369,7 +373,9 @@ def populate_scrollable_frame(main_frame):
         file1_listbox,
         file1_file_filter_entry,
         file1_column_filter_entry,
-        file1_listboxfile
+        file1_listboxfile,
+        stringtime1, 
+        stringtime2
     ))
     file1_optionmenu_var = tk.StringVar(file1_file_frame)
     file1_optionmenu_var.set("Select File")
@@ -433,7 +439,9 @@ def populate_scrollable_frame(main_frame):
                                           file2_folder_label,
                                           file2_listbox,
                                           file2_file_filter_entry,
-                                          file2_column_filter_entry
+                                          file2_column_filter_entry,
+                                          stringtime1,
+                                          stringtime2
                                       ))
     file2_browse_button.grid(row=1, column=0, padx=10, pady=5, sticky="w")
     
@@ -462,7 +470,9 @@ def populate_scrollable_frame(main_frame):
         file2_listbox,
         file2_file_filter_entry,
         file2_column_filter_entry,
-        file2_listboxfile
+        file2_listboxfile,
+        stringtime1,
+        stringtime2
     ))
     file2_optionmenu_var = tk.StringVar(file2_file_frame)
     file2_optionmenu_var.set("Select File")
@@ -673,8 +683,8 @@ def populate_scrollable_frame(main_frame):
     alignment_title.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="w")
     st1_label = ctk.CTkLabel(alignment_frame, text="Start Time 1")
     st1_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
-    stringtime1 = ctk.StringVar(alignment_frame, value="00:00:00")
-    stringtime2 = ctk.StringVar(alignment_frame,value="00:00:00")
+    stringtime1 = ctk.StringVar(alignment_frame, value=start_time_1)
+    stringtime2 = ctk.StringVar(alignment_frame,value=start_time_2)
     start_time1_entry = ctk.CTkEntry(alignment_frame, width=100, textvariable=stringtime1)
     start_time1_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
     st2_label = ctk.CTkLabel(alignment_frame, text="Start Time 2")

@@ -27,4 +27,7 @@ currentpage=0
 # Minimum consecutive data rows to avoid false positives
 min_data_rows = 2 
 
+start_time_1='00:00:00'
+start_time_2='00:00:00'
+
 enable_plot = False
