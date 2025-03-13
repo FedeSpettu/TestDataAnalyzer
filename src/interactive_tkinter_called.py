@@ -549,10 +549,8 @@ class InteractivePlotApp(tk.Toplevel):
     def on_pick(self, event):
         if hasattr(self, "custom_event_mode") and self.custom_event_mode:
             return
-
         artist = event.artist
-
-        # If the picked object is an annotation, remove it and also from the persistent list.
+        # If the picked object is an annotation, remove it permanently.
         if isinstance(artist, Annotation):
             artist.remove()
             if artist in self.manual_annotations:
@@ -563,20 +561,15 @@ class InteractivePlotApp(tk.Toplevel):
                     break
             self.canvas.draw_idle()
             return
-
         from matplotlib.lines import Line2D
         if isinstance(artist, Line2D):
-            # If already annotated, do nothing.
             if artist in self.line_annotations:
                 return
-            
-            xdata = artist.get_xdata()
-            # Use the clicked x position if available.
-            x_val = event.mouseevent.xdata if event.mouseevent.xdata is not None else (xdata[0] if len(xdata) > 0 else 0)
-            
-            # Check if it's an event line (vertical dotted line).
+            # Use the clicked x and y data from the mouse event.
+            x_val = event.mouseevent.xdata if event.mouseevent.xdata is not None else (artist.get_xdata()[0] if len(artist.get_xdata()) > 0 else 0)
+            y_val = event.mouseevent.ydata if event.mouseevent.ydata is not None else (artist.get_ydata()[0] if len(artist.get_ydata()) > 0 else 0)
+            # If this is an event line, optionally adjust the label text.
             if artist in self.event_line_labels:
-                y_val = self.ax.get_ylim()[1]  # place the label at the top
                 m = re.match(r"Row \d+ \(([\d\.]+)s\): (.+)", self.event_line_labels[artist])
                 if m:
                     elapsed = m.group(1)
@@ -584,31 +577,17 @@ class InteractivePlotApp(tk.Toplevel):
                     text = f"{ev_name} ({elapsed}s)"
                 else:
                     text = self.event_line_labels[artist]
-                ann = self.ax.annotate(
-                    text,
-                    xy=(x_val, y_val),
-                    xytext=(0, 5),  # Small offset from the top
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    fontsize=10,
-                    bbox=dict(boxstyle="round,pad=0.3", fc="w", alpha=0.8),
-                    arrowprops=dict(arrowstyle="->", color="black"),
-                    picker=True
-                )
             else:
-                y_val = event.mouseevent.ydata if event.mouseevent.ydata is not None else self.ax.get_ylim()[0]
                 text = artist.get_label()
-                ann = self.ax.annotate(
-                    text,
-                    xy=(x_val, y_val),
-                    xytext=(5, 5),
-                    textcoords="offset points",
-                    bbox=dict(boxstyle="round", fc="w"),
-                    arrowprops=dict(arrowstyle="->"),
-                    picker=True
-                )
-
+            ann = self.ax.annotate(
+                text,
+                xy=(x_val, y_val),
+                xytext=(5, 5),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round", fc="w", alpha=0.8),
+                arrowprops=dict(arrowstyle="->", color="black"),
+                picker=True
+            )
             self.line_annotations[artist] = ann
             self.manual_annotations.append(ann)
             self.canvas.draw_idle()
