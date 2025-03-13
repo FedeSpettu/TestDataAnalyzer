@@ -536,7 +536,6 @@ class InteractivePlotApp(tk.Toplevel):
                     x, y = xdata[index], ydata[index]
                     self.annot.xy = (x, y)
                     self.annot.set_text(line.get_label())
-                    # Ensure annotation background is white
                     self.annot.get_bbox_patch().set_facecolor('w')
                     self.annot.get_bbox_patch().set_alpha(0.8)
                     self.annot.set_visible(True)
@@ -550,7 +549,6 @@ class InteractivePlotApp(tk.Toplevel):
         if hasattr(self, "custom_event_mode") and self.custom_event_mode:
             return
         artist = event.artist
-        # If the picked object is an annotation, remove it permanently.
         if isinstance(artist, Annotation):
             artist.remove()
             if artist in self.manual_annotations:
@@ -565,10 +563,8 @@ class InteractivePlotApp(tk.Toplevel):
         if isinstance(artist, Line2D):
             if artist in self.line_annotations:
                 return
-            # Use the clicked x and y data from the mouse event.
             x_val = event.mouseevent.xdata if event.mouseevent.xdata is not None else (artist.get_xdata()[0] if len(artist.get_xdata()) > 0 else 0)
             y_val = event.mouseevent.ydata if event.mouseevent.ydata is not None else (artist.get_ydata()[0] if len(artist.get_ydata()) > 0 else 0)
-            # If this is an event line, optionally adjust the label text.
             if artist in self.event_line_labels:
                 m = re.match(r"Row \d+ \(([\d\.]+)s\): (.+)", self.event_line_labels[artist])
                 if m:
@@ -1127,7 +1123,6 @@ class InteractivePlotApp(tk.Toplevel):
 
     def create_plot(self):
         # --- Preserve manual annotations from pick events ---
-        # Save only annotations that are still in self.manual_annotations.
         saved_manual_annotations = []
         for ann in self.manual_annotations:
             saved_manual_annotations.append({
@@ -1135,10 +1130,9 @@ class InteractivePlotApp(tk.Toplevel):
                 'xy': ann.xy,
                 'xytext': ann.get_position()
             })
-        # Clear the persistent list so that removed annotations are not re-added.
         self.manual_annotations = []
         self.ax.clear()
-        self.event_line_labels = {}  # Clear old event labels.
+        self.event_line_labels = {}
         self.xy_data = []
         common_ref = self.get_common_reference()
         default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -1151,34 +1145,38 @@ class InteractivePlotApp(tk.Toplevel):
                              label=self.computed_label, color='purple', picker=5)
                 self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
         elif self.data_operation == 'moving_average':
+            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for i, col in enumerate(df1_selected):
+            for col in df1_selected:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
                     y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
-                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
-                    self.colors_df1.setdefault(col, color)
+                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
+                    self.colors_df1[col] = color
                     self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF1:{col}", color=color, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF1) failed: {e}")
             if self.df2 is not None:
                 df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for i, col in enumerate(df2_selected):
+                for col in df2_selected:
                     try:
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
                         y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
-                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
-                        self.colors_df2.setdefault(col, color)
+                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
+                        self.colors_df2[col] = color
                         self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF2:{col}", color=color, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
+                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF2) failed: {e}")
         elif self.data_operation == 'moving_average_time':
+            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for i, col in enumerate(df1_selected):
+            for col in df1_selected:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
@@ -1186,15 +1184,16 @@ class InteractivePlotApp(tk.Toplevel):
                     series.index = t
                     window_str = f"{self.ma_window}s"
                     y_vals = series.rolling(window=window_str, min_periods=1).mean().values
-                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
-                    self.colors_df1.setdefault(col, color)
+                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
+                    self.colors_df1[col] = color
                     self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=color, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
             if self.df2 is not None:
                 df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for i, col in enumerate(df2_selected):
+                for col in df2_selected:
                     try:
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
@@ -1202,48 +1201,50 @@ class InteractivePlotApp(tk.Toplevel):
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         y_vals = series.rolling(window=window_str, min_periods=1).mean().values
-                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
-                        self.colors_df2.setdefault(col, color)
+                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
+                        self.colors_df2[col] = color
                         self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=color, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
+                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
         else:
+            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for i, col in enumerate(df1_selected):
+            for col in df1_selected:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
                     y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
                     y_vals = np.nan_to_num(y_vals, nan=0.0)
-                    color = self.colors_df1.get(col, default_colors[i % len(default_colors)])
-                    self.colors_df1.setdefault(col, color)
+                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
+                    self.colors_df1[col] = color
                     self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=color, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
                     continue
             if self.df2 is not None:
                 df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for i, col in enumerate(df2_selected):
+                for col in df2_selected:
                     try:
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
                         y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
                         y_vals = np.nan_to_num(y_vals, nan=0.0)
-                        color = self.colors_df2.get(col, default_colors[i % len(default_colors)])
-                        self.colors_df2.setdefault(col, color)
+                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
+                        self.colors_df2[col] = color
                         self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=color, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
+                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
                         continue
 
-        # Plot threshold lines.
         for thr in self.thresholds:
             self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}", picker=5)
 
-        # --- Event Lines ---
         if "Event" in self.df1.columns and self.selected_events:
             cmap = plt.get_cmap("tab10")
             for i, event_info in enumerate(self.selected_events):
@@ -1263,7 +1264,6 @@ class InteractivePlotApp(tk.Toplevel):
                 self.event_lines.append((line, full_label))
                 self.xy_data.append((ev_sec, 0))
                 self.event_line_labels[line] = short_label
-        # Update legend: replace event line labels with detailed ones.
         handles, labels = self.ax.get_legend_handles_labels()
         if self.event_lines:
             for line, full_label in self.event_lines:
@@ -1272,7 +1272,6 @@ class InteractivePlotApp(tk.Toplevel):
                         labels[j] = full_label
                         break
             self.event_lines = []
-
         if handles:
             handles = handles[::-1]
             labels = labels[::-1]
@@ -1308,7 +1307,6 @@ class InteractivePlotApp(tk.Toplevel):
 
         self.ax.set_title(self.chart_title_entry.get(), pad=15)
         
-        # Re-add only the annotations that were preserved.
         for ann_data in saved_manual_annotations:
             ann = self.ax.annotate(ann_data['text'], xy=ann_data['xy'], xytext=ann_data['xytext'],
                                    textcoords="offset points",
