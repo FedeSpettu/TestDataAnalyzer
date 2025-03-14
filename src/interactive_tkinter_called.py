@@ -246,10 +246,11 @@ class InteractivePlotApp(tk.Toplevel):
         self.common_time = None
         self.computed_label = None
         self.ma_window = None
-        self.firstplot=False
-        self.initialization_plot=False
+        self.firstplot = False
+        self.initialization_plot = False
         self.xy_data = []
         self.kdtree = None
+        self.difference_columns = []  # Will store tuples like ("DF1", "col") for subtracted columns
 
         self.selected_df1_columns = set()
         self.selected_df2_columns = set()
@@ -483,10 +484,9 @@ class InteractivePlotApp(tk.Toplevel):
         if event_tuple not in self.selected_events:
             self.selected_events.append(event_tuple)
             self.event_option_var.set("Select Event")
-            # Preserve current zoom state
             print('add_event_from_option')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -518,10 +518,9 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at timestamp {timestamp}")
             self.canvas.mpl_disconnect(self.custom_event_cid)
             self.custom_event_mode = False
-            # Preserve current zoom state
             print('on_custom_event_click')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -612,8 +611,7 @@ class InteractivePlotApp(tk.Toplevel):
             self.canvas.draw_idle()
 
     def reset_view(self):
-        self.firstplot=False
-        #self.initialization_plot=False
+        self.firstplot = False
         self.selected_df1_columns.clear()
         if self.df2_listbox is not None:
             self.selected_df2_columns.clear()
@@ -699,10 +697,9 @@ class InteractivePlotApp(tk.Toplevel):
         color = colorchooser.askcolor()[1]
         if color:
             self.colors_df1[column] = color
-            # Preserve current zoom state
             print('choose color df1')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -726,10 +723,9 @@ class InteractivePlotApp(tk.Toplevel):
         color = colorchooser.askcolor()[1]
         if color:
             self.colors_df2[column] = color
-            # Preserve current zoom state
             print('choose color df2')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -748,10 +744,9 @@ class InteractivePlotApp(tk.Toplevel):
             thr = float(value)
             self.thresholds.append(thr)
             self.threshold_entry.delete(0, tk.END)
-            # Preserve current zoom state
             print('add_threshold')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -766,10 +761,9 @@ class InteractivePlotApp(tk.Toplevel):
     def remove_threshold(self):
         if self.thresholds:
             self.thresholds.pop()
-            # Preserve current zoom state
             print('remove_threshold')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -787,10 +781,9 @@ class InteractivePlotApp(tk.Toplevel):
             self.df1.loc[rem[0], "Event"] = None
             if rem in self.custom_events:
                 self.custom_events.remove(rem)
-            # Preserve current zoom state
             print('remove last event')
             print(self.firstplot)
-            if self.firstplot==True:
+            if self.firstplot == True:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -802,22 +795,71 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             messagebox.showinfo("Remove Event", "No events to remove.")
 
+    # New method: open a dialog to choose two columns (from DF1/DF2 selections) to subtract
+    def choose_difference_columns(self):
+        options = []
+        for col in self.selected_df1_columns:
+            options.append("DF1: " + col)
+        if self.df2 is not None and self.selected_df2_columns:
+            for col in self.selected_df2_columns:
+                options.append("DF2: " + col)
+        if len(options) < 2:
+            messagebox.showerror("Plot Difference", "Select at least two columns for subtraction.")
+            return None, None
+        dialog = tk.Toplevel(self)
+        dialog.title("Select Columns for Subtraction")
+        tk.Label(dialog, text="Select first column to subtract:").pack(padx=10, pady=5)
+        first_var = tk.StringVar(dialog)
+        first_var.set(options[0])
+        first_menu = tk.OptionMenu(dialog, first_var, *options)
+        first_menu.pack(padx=10, pady=5)
+        tk.Label(dialog, text="Select second column to subtract:").pack(padx=10, pady=5)
+        second_var = tk.StringVar(dialog)
+        # Default second selection (different from first)
+        default_second = options[1] if options[1] != options[0] else options[0]
+        second_var.set(default_second)
+        second_menu = tk.OptionMenu(dialog, second_var, *options)
+        second_menu.pack(padx=10, pady=5)
+        result = {}
+        def on_ok():
+            first_selection = first_var.get()
+            second_selection = second_var.get()
+            if first_selection == second_selection:
+                messagebox.showerror("Selection Error", "Please select two different columns.")
+                return
+            result['first'] = first_selection
+            result['second'] = second_selection
+            dialog.destroy()
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=10)
+        dialog.grab_set()
+        self.wait_window(dialog)
+        if 'first' in result and 'second' in result:
+            return result['first'], result['second']
+        else:
+            return None, None
+
     def plot_difference(self):
-        self.data_operation = 'computed_difference'
-        selections = []
-        selections.extend([("DF1", col) for col in self.selected_df1_columns])
-        if self.df2_listbox is not None:
-            selections.extend([("DF2", col) for col in self.selected_df2_columns])
-        if len(selections) != 2:
-            messagebox.showerror("Plot Difference", "Select exactly two columns (from DF1 and/or DF2) for difference.")
+        # Open a dialog to choose two columns for subtraction
+        first_sel, second_sel = self.choose_difference_columns()
+        if not first_sel or not second_sel:
             self.data_operation = 'normal'
             return
-        src1, col1 = selections[0]
-        src2, col2 = selections[1]
-        series1 = self.df1[col1] if src1 == "DF1" else self.df1[col1]
-        series2 = self.df1[col2] if src2 == "DF1" else self.df1[col2]
-        t1 = self.df1_time if src1 == "DF1" else self.df2_time
-        t2 = self.df1_time if src2 == "DF1" else self.df2_time
+        # Parse the selections. They are strings like "DF1: colname" or "DF2: colname"
+        src1, col1 = first_sel.split(": ", 1)
+        src2, col2 = second_sel.split(": ", 1)
+        if src1 == "DF1":
+            series1 = self.df1[col1]
+            t1 = self.df1_time
+        else:
+            series1 = self.df2[col1]
+            t1 = self.df2_time
+        if src2 == "DF1":
+            series2 = self.df1[col2]
+            t2 = self.df1_time
+        else:
+            series2 = self.df2[col2]
+            t2 = self.df2_time
         common_ref = min(t1.min(), t2.min())
         t1_sec = (t1 - common_ref).dt.total_seconds().values
         t2_sec = (t2 - common_ref).dt.total_seconds().values
@@ -827,10 +869,20 @@ class InteractivePlotApp(tk.Toplevel):
         self.computed_series = interp1 - interp2
         self.common_time = common_time
         self.computed_label = f"Difference: {src1}:{col1} - {src2}:{col2}"
-        # Preserve current zoom state
+        self.data_operation = 'computed_difference'
+        self.difference_columns = [(src1, col1), (src2, col2)]
+        # Remove the subtracted columns from the sets of columns to be plotted normally
+        if src1 == "DF1":
+            self.selected_df1_columns.discard(col1)
+        else:
+            self.selected_df2_columns.discard(col1)
+        if src2 == "DF1":
+            self.selected_df1_columns.discard(col2)
+        else:
+            self.selected_df2_columns.discard(col2)
         print('plot difference')
         print(self.firstplot)
-        if self.firstplot==True:
+        if self.firstplot == True:
             old_xlim = self.ax.get_xlim()
             old_ylim = self.ax.get_ylim()
             self.create_plot()
@@ -859,10 +911,9 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average", "Enter a valid positive integer for the window.")
             self.data_operation = 'normal'
             return
-        # Preserve current zoom state
         print('moving average')
         print(self.firstplot)
-        if self.firstplot==True:
+        if self.firstplot == True:
             old_xlim = self.ax.get_xlim()
             old_ylim = self.ax.get_ylim()
             self.create_plot()
@@ -891,10 +942,9 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average (Time)", "Enter a valid positive number for the time window (in seconds).")
             self.data_operation = 'normal'
             return
-        # Preserve current zoom state
         print('moving average time')
         print(self.firstplot)
-        if self.firstplot==True:
+        if self.firstplot == True:
             old_xlim = self.ax.get_xlim()
             old_ylim = self.ax.get_ylim()
             self.create_plot()
@@ -1232,10 +1282,9 @@ class InteractivePlotApp(tk.Toplevel):
         self.computed_series = None
         self.common_time = None
         self.ma_window = None
-        # Preserve current zoom state
         print('plot_normal')
         print(self.firstplot)
-        if self.firstplot==True:
+        if self.firstplot == True:
             old_xlim = self.ax.get_xlim()
             old_ylim = self.ax.get_ylim()
             self.create_plot()
@@ -1276,6 +1325,8 @@ class InteractivePlotApp(tk.Toplevel):
                 if color not in used_colors:
                     return color
 
+        # If computed_difference mode, plot the computed difference series first,
+        # then plot the remaining normally selected columns.
         if self.data_operation == 'computed_difference':
             if self.common_time is None or self.computed_series is None:
                 messagebox.showerror("Plot Difference", "No computed difference data available.")
@@ -1285,6 +1336,43 @@ class InteractivePlotApp(tk.Toplevel):
                 self.ax.plot(self.common_time, self.computed_series,
                              label=self.computed_label, color=comp_color, picker=5)
                 self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
+            # Plot remaining DF1 columns not used for subtraction
+            rem_df1 = [col for col in self.selected_df1_columns]
+            for col in rem_df1:
+                try:
+                    t = self.df1_time
+                    t_sec = (t - common_ref).dt.total_seconds().values
+                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                    y_vals = np.nan_to_num(y_vals, nan=0.0)
+                    candidate = self.colors_df1.get(col)
+                    if candidate is None or candidate in used_colors:
+                        candidate = get_unique_color(used_colors)
+                        self.colors_df1[col] = candidate
+                    used_colors.add(candidate)
+                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=candidate, picker=5)
+                    self.xy_data.extend(list(zip(t_sec, y_vals)))
+                except Exception as e:
+                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
+                    continue
+            # Plot remaining DF2 columns not used for subtraction
+            if self.df2 is not None:
+                rem_df2 = [col for col in self.selected_df2_columns]
+                for col in rem_df2:
+                    try:
+                        t = self.df2_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
+                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
+                        y_vals = np.nan_to_num(y_vals, nan=0.0)
+                        candidate = self.colors_df2.get(col)
+                        if candidate is None or candidate in used_colors:
+                            candidate = get_unique_color(used_colors)
+                            self.colors_df2[col] = candidate
+                        used_colors.add(candidate)
+                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=candidate, picker=5)
+                        self.xy_data.extend(list(zip(t_sec, y_vals)))
+                    except Exception as e:
+                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
+                        continue
         elif self.data_operation == 'moving_average':
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
@@ -1356,6 +1444,7 @@ class InteractivePlotApp(tk.Toplevel):
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
         else:
+            # Normal plot of DF1 and DF2 columns
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
@@ -1473,12 +1562,12 @@ class InteractivePlotApp(tk.Toplevel):
                                    picker=True)
             self.manual_annotations.append(ann)
 
-        if self.initialization_plot==False:
+        if self.initialization_plot == False:
             self.canvas.draw()
-            self.initialization_plot=True
+            self.initialization_plot = True
         else:
             self.canvas.draw()
-            self.firstplot=True
+            self.firstplot = True
         
 
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
