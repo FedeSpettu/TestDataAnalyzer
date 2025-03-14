@@ -246,7 +246,8 @@ class InteractivePlotApp(tk.Toplevel):
         self.common_time = None
         self.computed_label = None
         self.ma_window = None
-
+        self.firstplot=False
+        self.initialization_plot=False
         self.xy_data = []
         self.kdtree = None
 
@@ -483,12 +484,17 @@ class InteractivePlotApp(tk.Toplevel):
             self.selected_events.append(event_tuple)
             self.event_option_var.set("Select Event")
             # Preserve current zoom state
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
+            print('add_event_from_option')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
 
     def get_common_reference(self):
         t1 = self.df1_time
@@ -513,12 +519,17 @@ class InteractivePlotApp(tk.Toplevel):
             self.canvas.mpl_disconnect(self.custom_event_cid)
             self.custom_event_mode = False
             # Preserve current zoom state
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
+            print('on_custom_event_click')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
 
     def initiate_custom_event(self):
         custom_event = askstring("Custom Event", "Enter custom event name:")
@@ -601,6 +612,8 @@ class InteractivePlotApp(tk.Toplevel):
             self.canvas.draw_idle()
 
     def reset_view(self):
+        self.firstplot=False
+        #self.initialization_plot=False
         self.selected_df1_columns.clear()
         if self.df2_listbox is not None:
             self.selected_df2_columns.clear()
@@ -686,7 +699,18 @@ class InteractivePlotApp(tk.Toplevel):
         color = colorchooser.askcolor()[1]
         if color:
             self.colors_df1[column] = color
-            self.create_plot()
+            # Preserve current zoom state
+            print('choose color df1')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
 
     def choose_color_df2(self):
         if not self.selected_df2_columns:
@@ -702,7 +726,18 @@ class InteractivePlotApp(tk.Toplevel):
         color = colorchooser.askcolor()[1]
         if color:
             self.colors_df2[column] = color
-            self.create_plot()
+            # Preserve current zoom state
+            print('choose color df2')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
 
     def add_threshold(self):
         value = self.threshold_entry.get().strip()
@@ -713,14 +748,36 @@ class InteractivePlotApp(tk.Toplevel):
             thr = float(value)
             self.thresholds.append(thr)
             self.threshold_entry.delete(0, tk.END)
-            self.create_plot()
+            # Preserve current zoom state
+            print('add_threshold')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter a valid number for threshold.")
 
     def remove_threshold(self):
         if self.thresholds:
             self.thresholds.pop()
-            self.create_plot()
+            # Preserve current zoom state
+            print('remove_threshold')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
         else:
             messagebox.showinfo("Remove Threshold", "No thresholds to remove.")
 
@@ -730,7 +787,18 @@ class InteractivePlotApp(tk.Toplevel):
             self.df1.loc[rem[0], "Event"] = None
             if rem in self.custom_events:
                 self.custom_events.remove(rem)
-            self.create_plot()
+            # Preserve current zoom state
+            print('remove last event')
+            print(self.firstplot)
+            if self.firstplot==True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot()
         else:
             messagebox.showinfo("Remove Event", "No events to remove.")
 
@@ -746,8 +814,8 @@ class InteractivePlotApp(tk.Toplevel):
             return
         src1, col1 = selections[0]
         src2, col2 = selections[1]
-        series1 = self.df1[col1] if src1 == "DF1" else self.df2[col1]
-        series2 = self.df1[col2] if src2 == "DF1" else self.df2[col2]
+        series1 = self.df1[col1] if src1 == "DF1" else self.df1[col1]
+        series2 = self.df1[col2] if src2 == "DF1" else self.df1[col2]
         t1 = self.df1_time if src1 == "DF1" else self.df2_time
         t2 = self.df1_time if src2 == "DF1" else self.df2_time
         common_ref = min(t1.min(), t2.min())
@@ -759,7 +827,18 @@ class InteractivePlotApp(tk.Toplevel):
         self.computed_series = interp1 - interp2
         self.common_time = common_time
         self.computed_label = f"Difference: {src1}:{col1} - {src2}:{col2}"
-        self.create_plot()
+        # Preserve current zoom state
+        print('plot difference')
+        print(self.firstplot)
+        if self.firstplot==True:
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
+            self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
+        else:
+            self.create_plot()
 
     def plot_moving_average(self):
         self.data_operation = 'moving_average'
@@ -780,7 +859,18 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average", "Enter a valid positive integer for the window.")
             self.data_operation = 'normal'
             return
-        self.create_plot()
+        # Preserve current zoom state
+        print('moving average')
+        print(self.firstplot)
+        if self.firstplot==True:
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
+            self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
+        else:
+            self.create_plot()
 
     def plot_moving_average_time(self):
         self.data_operation = 'moving_average_time'
@@ -801,7 +891,18 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average (Time)", "Enter a valid positive number for the time window (in seconds).")
             self.data_operation = 'normal'
             return
-        self.create_plot()
+        # Preserve current zoom state
+        print('moving average time')
+        print(self.firstplot)
+        if self.firstplot==True:
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
+            self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
+        else:
+            self.create_plot()
 
     def save_plot_to_excel(self):
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
@@ -1131,10 +1232,21 @@ class InteractivePlotApp(tk.Toplevel):
         self.computed_series = None
         self.common_time = None
         self.ma_window = None
-        self.create_plot()
+        # Preserve current zoom state
+        print('plot_normal')
+        print(self.firstplot)
+        if self.firstplot==True:
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
+            self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
+        else:
+            self.create_plot()
 
     def create_plot(self):
-        # --- Preserve manual annotations from pick events ---
+        # --- Preserve manual annotations from pick events --- 
         saved_manual_annotations = []
         for ann in self.manual_annotations:
             saved_manual_annotations.append({
@@ -1147,28 +1259,46 @@ class InteractivePlotApp(tk.Toplevel):
         self.event_line_labels = {}
         self.xy_data = []
         common_ref = self.get_common_reference()
+        
+        # Set up used colors tracking
+        used_colors = set()
         default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        
+        def get_unique_color(used_colors, preferred=None):
+            if preferred and preferred not in used_colors:
+                return preferred
+            for color in default_colors:
+                if color not in used_colors:
+                    return color
+            import random
+            while True:
+                color = "#%06x" % random.randint(0, 0xFFFFFF)
+                if color not in used_colors:
+                    return color
 
         if self.data_operation == 'computed_difference':
             if self.common_time is None or self.computed_series is None:
                 messagebox.showerror("Plot Difference", "No computed difference data available.")
             else:
+                comp_color = get_unique_color(used_colors, preferred='purple')
+                used_colors.add(comp_color)
                 self.ax.plot(self.common_time, self.computed_series,
-                             label=self.computed_label, color='purple', picker=5)
+                             label=self.computed_label, color=comp_color, picker=5)
                 self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
         elif self.data_operation == 'moving_average':
-            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
                     y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
-                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
-                    self.colors_df1[col] = color
-                    self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF1:{col}", color=color, picker=5)
+                    candidate = self.colors_df1.get(col)
+                    if candidate is None or candidate in used_colors:
+                        candidate = get_unique_color(used_colors)
+                        self.colors_df1[col] = candidate
+                    used_colors.add(candidate)
+                    self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF1:{col}", color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF1) failed: {e}")
             if self.df2 is not None:
@@ -1178,15 +1308,16 @@ class InteractivePlotApp(tk.Toplevel):
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
                         y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
-                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
-                        self.colors_df2[col] = color
-                        self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF2:{col}", color=color, picker=5)
+                        candidate = self.colors_df2.get(col)
+                        if candidate is None or candidate in used_colors:
+                            candidate = get_unique_color(used_colors)
+                            self.colors_df2[col] = candidate
+                        used_colors.add(candidate)
+                        self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF2:{col}", color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
-                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF2) failed: {e}")
         elif self.data_operation == 'moving_average_time':
-            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
@@ -1196,11 +1327,13 @@ class InteractivePlotApp(tk.Toplevel):
                     series.index = t
                     window_str = f"{self.ma_window}s"
                     y_vals = series.rolling(window=window_str, min_periods=1).mean().values
-                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
-                    self.colors_df1[col] = color
-                    self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=color, picker=5)
+                    candidate = self.colors_df1.get(col)
+                    if candidate is None or candidate in used_colors:
+                        candidate = get_unique_color(used_colors)
+                        self.colors_df1[col] = candidate
+                    used_colors.add(candidate)
+                    self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
             if self.df2 is not None:
@@ -1213,15 +1346,16 @@ class InteractivePlotApp(tk.Toplevel):
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         y_vals = series.rolling(window=window_str, min_periods=1).mean().values
-                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
-                        self.colors_df2[col] = color
-                        self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=color, picker=5)
+                        candidate = self.colors_df2.get(col)
+                        if candidate is None or candidate in used_colors:
+                            candidate = get_unique_color(used_colors)
+                            self.colors_df2[col] = candidate
+                        used_colors.add(candidate)
+                        self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
-                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
         else:
-            color_index = 0
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
@@ -1229,11 +1363,13 @@ class InteractivePlotApp(tk.Toplevel):
                     t_sec = (t - common_ref).dt.total_seconds().values
                     y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
                     y_vals = np.nan_to_num(y_vals, nan=0.0)
-                    color = self.colors_df1.get(col, default_colors[color_index % len(default_colors)])
-                    self.colors_df1[col] = color
-                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=color, picker=5)
+                    candidate = self.colors_df1.get(col)
+                    if candidate is None or candidate in used_colors:
+                        candidate = get_unique_color(used_colors)
+                        self.colors_df1[col] = candidate
+                    used_colors.add(candidate)
+                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    color_index += 1
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
                     continue
@@ -1245,23 +1381,27 @@ class InteractivePlotApp(tk.Toplevel):
                         t_sec = (t - common_ref).dt.total_seconds().values
                         y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
                         y_vals = np.nan_to_num(y_vals, nan=0.0)
-                        color = self.colors_df2.get(col, default_colors[color_index % len(default_colors)])
-                        self.colors_df2[col] = color
-                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=color, picker=5)
+                        candidate = self.colors_df2.get(col)
+                        if candidate is None or candidate in used_colors:
+                            candidate = get_unique_color(used_colors)
+                            self.colors_df2[col] = candidate
+                        used_colors.add(candidate)
+                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
-                        color_index += 1
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
                         continue
 
         for thr in self.thresholds:
-            self.ax.axhline(y=thr, color='red', linestyle='dashed', label=f"Threshold: {thr}", picker=5)
+            thr_color = get_unique_color(used_colors, preferred='red')
+            used_colors.add(thr_color)
+            self.ax.axhline(y=thr, color=thr_color, linestyle='dashed', label=f"Threshold: {thr}", picker=5)
 
         if "Event" in self.df1.columns and self.selected_events:
-            cmap = plt.get_cmap("tab10")
-            for i, event_info in enumerate(self.selected_events):
+            for event_info in self.selected_events:
                 row_idx, ev_name = event_info
-                color = cmap(i % 10)
+                event_color = get_unique_color(used_colors)
+                used_colors.add(event_color)
                 if row_idx in self.custom_event_plot_times:
                     ev_sec = self.custom_event_plot_times[row_idx]
                 else:
@@ -1272,7 +1412,7 @@ class InteractivePlotApp(tk.Toplevel):
                         continue
                 short_label = f"{ev_name} ({ev_sec:.1f}s)"
                 full_label = f"Row {row_idx+2} ({ev_sec:.1f}s): {ev_name}"
-                line = self.ax.axvline(x=ev_sec, color=color, linestyle='dotted', picker=5, label=short_label)
+                line = self.ax.axvline(x=ev_sec, color=event_color, linestyle='dotted', picker=5, label=short_label)
                 self.event_lines.append((line, full_label))
                 self.xy_data.append((ev_sec, 0))
                 self.event_line_labels[line] = short_label
@@ -1332,7 +1472,14 @@ class InteractivePlotApp(tk.Toplevel):
                                    arrowprops=dict(arrowstyle="->"),
                                    picker=True)
             self.manual_annotations.append(ann)
-        self.canvas.draw()
+
+        if self.initialization_plot==False:
+            self.canvas.draw()
+            self.initialization_plot=True
+        else:
+            self.canvas.draw()
+            self.firstplot=True
+        
 
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
     if os.path.isfile('output0.csv'):
