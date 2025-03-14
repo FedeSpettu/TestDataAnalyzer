@@ -482,7 +482,13 @@ class InteractivePlotApp(tk.Toplevel):
         if event_tuple not in self.selected_events:
             self.selected_events.append(event_tuple)
             self.event_option_var.set("Select Event")
+            # Preserve current zoom state
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
             self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
 
     def get_common_reference(self):
         t1 = self.df1_time
@@ -506,7 +512,13 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at timestamp {timestamp}")
             self.canvas.mpl_disconnect(self.custom_event_cid)
             self.custom_event_mode = False
+            # Preserve current zoom state
+            old_xlim = self.ax.get_xlim()
+            old_ylim = self.ax.get_ylim()
             self.create_plot()
+            self.ax.set_xlim(old_xlim)
+            self.ax.set_ylim(old_ylim)
+            self.canvas.draw()
 
     def initiate_custom_event(self):
         custom_event = askstring("Custom Event", "Enter custom event name:")
@@ -1275,10 +1287,16 @@ class InteractivePlotApp(tk.Toplevel):
         if handles:
             handles = handles[::-1]
             labels = labels[::-1]
-            if len(labels) > 10:
-                handles = handles[:10]
-                labels = labels[:10]
-            ncol = 1 if len(labels) <= 5 else 2
+            max_items = 15  # allow up to 15 legend items (3 columns x 5 items each)
+            if len(labels) > max_items:
+                handles = handles[:max_items]
+                labels = labels[:max_items]
+            if len(labels) <= 5:
+                ncol = 1
+            elif len(labels) <= 10:
+                ncol = 2
+            else:
+                ncol = 3
             self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08),
                            ncol=ncol, columnspacing=2.0)
         self.ax.set_xlabel("Elapsed Time [s]")
