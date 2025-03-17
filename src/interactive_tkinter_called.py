@@ -64,165 +64,180 @@ NavigationToolbar2Tk.set_message = safe_set_message
 class FastZoomToolbar2Tk(NavigationToolbar2Tk):
     def __init__(self, canvas, window):
         super().__init__(canvas, window)
+        
+        # Initialize zoom-related variables
         self._zoom_rect = None
         self._zoom_background = None
         self._zoom_start = None
         self._zoom_start_data = None
         self._zoom_active = False
-        self.canvas.mpl_connect('button_press_event', self._fast_zoom_press)
-        self.canvas.mpl_connect('button_release_event', self._fast_zoom_release)
-        self.canvas.mpl_connect('motion_notify_event', self._fast_zoom_motion)
-        # Create Zoom In and Zoom Out buttons next to "Configure Subplots"
-        self.zoom_mode = None  # Track zoom mode ('in' or 'out')
-
-        # Create Zoom In button
-        self.zoom_in_button = ttk.Button(self, text="Zoom In", command=self.toggle_zoom_in)
+        self.zoom_mode = None  # 'in' or 'out' or None
+        
+        # Store original limits
+        self.has_stored_limits = False
+        self.original_xlim = None
+        self.original_ylim = None
+        
+        # Connect event handlers
+        self.canvas.mpl_connect('button_press_event', self._on_press)
+        self.canvas.mpl_connect('button_release_event', self._on_release)
+        self.canvas.mpl_connect('motion_notify_event', self._on_motion)
+        
+        # Create zoom buttons
+        self.zoom_in_button = ttk.Button(self, text="Zoom In", command=self._toggle_zoom_in)
         self.zoom_in_button.pack(side=tk.LEFT, padx=2, pady=2)
-
-        # Create Zoom Out button
-        self.zoom_out_button = ttk.Button(self, text="Zoom Out", command=self.toggle_zoom_out)
+        
+        self.zoom_out_button = ttk.Button(self, text="Zoom Out", command=self._toggle_zoom_out)
         self.zoom_out_button.pack(side=tk.LEFT, padx=2, pady=2)
-
-        # Bind mouse click event for zooming
-        self.canvas.mpl_connect("button_press_event", self.perform_zoom)
-
-        # Store original limits for Home reset
-        self.store_original_limits()
-
-    def store_original_limits(self):
-        """Stores the original plot limits for resetting on 'Home' button click."""
-        ax = self.canvas.figure.axes[0]
-        self.original_xlim = ax.get_xlim()
-        self.original_ylim = ax.get_ylim()
-
-    def toggle_zoom_in(self):
-        """Activate or deactivate Zoom In mode."""
+        
+        # Override home button functionality
+        for text, tooltip_text, image_file, callback in self.toolitems:
+            if text == 'Home':
+                self._buttons[text].config(command=self._home_reset)
+                break
+    
+    def _store_original_limits(self):
+        """Store the original limits if not already stored"""
+        if not self.has_stored_limits:
+            for ax in self.canvas.figure.axes:
+                self.original_xlim = ax.get_xlim()
+                self.original_ylim = ax.get_ylim()
+                self.has_stored_limits = True
+                break
+    
+    def _home_reset(self):
+        """Reset view to original limits"""
+        if self.has_stored_limits:
+            for ax in self.canvas.figure.axes:
+                ax.set_xlim(self.original_xlim)
+                ax.set_ylim(self.original_ylim)
+            self.canvas.draw()
+    
+    def _toggle_zoom_in(self):
+        """Toggle zoom in mode"""
+        self._store_original_limits()
         if self.zoom_mode == 'in':
-            self.exit_zoom_mode()
+            self._exit_zoom_mode()
         else:
             self.zoom_mode = 'in'
-            self.config_zoom_button(self.zoom_in_button)
-            self.canvas.get_tk_widget().config(cursor="plus")  # Change cursor to magnifying glass
-
-    def toggle_zoom_out(self):
-        """Activate or deactivate Zoom Out mode."""
+            self._configure_zoom_buttons(self.zoom_in_button)
+            self.canvas.get_tk_widget().config(cursor="plus")
+    
+    def _toggle_zoom_out(self):
+        """Toggle zoom out mode"""
+        self._store_original_limits()
         if self.zoom_mode == 'out':
-            self.exit_zoom_mode()
+            self._exit_zoom_mode()
         else:
             self.zoom_mode = 'out'
-            self.config_zoom_button(self.zoom_out_button)
-            self.canvas.get_tk_widget().config(cursor="plus")  # Change cursor to magnifying glass
-
-    def config_zoom_button(self, active_button):
-        """Highlight active zoom button and reset the other."""
+            self._configure_zoom_buttons(self.zoom_out_button)
+            self.canvas.get_tk_widget().config(cursor="plus")
+    
+    def _configure_zoom_buttons(self, active_button):
+        """Configure zoom button appearance"""
         self.zoom_in_button.config(style="TButton")
         self.zoom_out_button.config(style="TButton")
-
-        active_button.config(style="Active.TButton")  # Set the clicked button to green
-
-    def exit_zoom_mode(self):
-        """Exit zoom mode and reset UI."""
+        active_button.config(style="Active.TButton")
+    
+    def _exit_zoom_mode(self):
+        """Exit zoom mode"""
         self.zoom_mode = None
         self.zoom_in_button.config(style="TButton")
         self.zoom_out_button.config(style="TButton")
-        self.canvas.get_tk_widget().config(cursor="")  # Reset cursor
-
-    def perform_zoom(self, event):
-        """Zoom in or out based on the last clicked position."""
-        if not self.zoom_mode or event.inaxes is None:
-            return  # Ignore if not in zoom mode
-
-        ax = event.inaxes
-        x_center, y_center = event.xdata, event.ydata
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
-
-        # Determine zoom factor based on mode
-        zoom_factor = 0.8 if self.zoom_mode == 'in' else 1.25
-
-        # Apply zoom
-        x_range = (xlim[1] - xlim[0]) * zoom_factor
-        y_range = (ylim[1] - ylim[0]) * zoom_factor
-        ax.set_xlim(x_center - x_range / 2, x_center + x_range / 2)
-        ax.set_ylim(y_center - y_range / 2, y_center + y_range / 2)
-
-        self.canvas.draw()
-
-    def _fast_zoom_press(self, event):
-        if self.mode != 'zoom' or event.inaxes is None:
-            return
-        self._zoom_active = True
-        self._zoom_start = (event.x, event.y)
-        self._zoom_start_data = (event.xdata, event.ydata)
-        ax = event.inaxes
-        if self._zoom_rect is None:
-            self._zoom_rect = plt.Rectangle((event.xdata, event.ydata), 0, 0,
-                                             fill=False, color='black', linestyle='--')
-            ax.add_patch(self._zoom_rect)
-        else:
-            self._zoom_rect.set_visible(True)
-            self._zoom_rect.set_xy((event.xdata, event.ydata))
-            self._zoom_rect.set_width(0)
-            self._zoom_rect.set_height(0)
-        self.canvas.draw()
-        self._zoom_background = self.canvas.copy_from_bbox(ax.bbox)
+        self.canvas.get_tk_widget().config(cursor="")
     
-    def _fast_zoom_motion(self, event):
-        if not self._zoom_active or event.inaxes is None or self._zoom_rect is None or self._zoom_background is None:
+    def _on_press(self, event):
+        """Handle mouse press events"""
+        self._store_original_limits()
+        
+        # Handle zoom click
+        if self.zoom_mode and event.inaxes:
+            self._perform_zoom_click(event)
             return
+        
+        # Handle zoom rectangle
+        if self.mode == 'zoom' and event.inaxes:
+            self._zoom_active = True
+            self._zoom_start = (event.x, event.y)
+            self._zoom_start_data = (event.xdata, event.ydata)
+            
+            # Create or update zoom rectangle
+            if self._zoom_rect is None:
+                self._zoom_rect = plt.Rectangle(
+                    (event.xdata, event.ydata), 0, 0,
+                    fill=False, color='black', linestyle='--'
+                )
+                event.inaxes.add_patch(self._zoom_rect)
+            else:
+                self._zoom_rect.set_visible(True)
+                self._zoom_rect.set_xy((event.xdata, event.ydata))
+                self._zoom_rect.set_width(0)
+                self._zoom_rect.set_height(0)
+            
+            self.canvas.draw()
+            self._zoom_background = self.canvas.copy_from_bbox(event.inaxes.bbox)
+    
+    def _on_release(self, event):
+        """Handle mouse release events"""
+        if not self._zoom_active or event.inaxes is None:
+            return
+        
+        self._zoom_active = False
+        
+        # Apply zoom if rectangle has size
+        if self._zoom_rect is not None:
+            x0, y0 = self._zoom_rect.get_x(), self._zoom_rect.get_y()
+            width, height = self._zoom_rect.get_width(), self._zoom_rect.get_height()
+            
+            if width > 0 and height > 0:
+                event.inaxes.set_xlim(x0, x0 + width)
+                event.inaxes.set_ylim(y0, y0 + height)
+            
+            self._zoom_rect.set_visible(False)
+        
+        self.canvas.draw()
+        self._zoom_start = None
+        self._zoom_start_data = None
+    
+    def _on_motion(self, event):
+        """Handle mouse motion events"""
+        if (not self._zoom_active or event.inaxes is None or
+                self._zoom_rect is None or self._zoom_background is None):
+            return
+        
+        # Update zoom rectangle
         ax = event.inaxes
         self.canvas.restore_region(self._zoom_background)
+        
         x0, y0 = self._zoom_start_data
         x1, y1 = event.xdata, event.ydata
         xmin, ymin = min(x0, x1), min(y0, y1)
         width, height = abs(x1 - x0), abs(y1 - y0)
+        
         self._zoom_rect.set_xy((xmin, ymin))
         self._zoom_rect.set_width(width)
         self._zoom_rect.set_height(height)
+        
         ax.draw_artist(self._zoom_rect)
         self.canvas.blit(ax.bbox)
     
-    def _fast_zoom_release(self, event):
-        if not self._zoom_active:
-            return
-        self._zoom_active = False
-        if event.inaxes is None:
-            return
-        # Get the initial click coordinates (we’ll use the minimum as the lower bound)
-        x0, y0 = self._zoom_start_data
-        x1, y1 = event.xdata, event.ydata
-        lower_x = min(x0, x1)
-        lower_y = min(y0, y1)
+    def _perform_zoom_click(self, event):
+        """Perform zoom in/out at click location"""
         ax = event.inaxes
-
-        # Gather all x and y data from the plotted lines in the axis
-        all_x = []
-        all_y = []
-        for line in ax.lines:
-            xd, yd = line.get_xdata(), line.get_ydata()
-            all_x.extend(xd)
-            all_y.extend(yd)
-
-        # Use the maximum data values as the upper bounds (with fallback if no data is available)
-        if all_x:
-            upper_x = max(all_x)
-        else:
-            upper_x = max(x0, x1)
-        if all_y:
-            upper_y = max(all_y)
-        else:
-            upper_y = max(y0, y1)
-
-        # Set the new limits: lower bound from the zoom start, and upper bound from the data
-        ax.set_xlim(lower_x, upper_x)
-        ax.set_ylim(lower_y, upper_y)
-
-        # Hide the zoom rectangle and redraw the canvas
-        if self._zoom_rect is not None:
-            self._zoom_rect.set_visible(False)
+        x_center, y_center = event.xdata, event.ydata
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        # Calculate zoom factor
+        zoom_factor = 0.8 if self.zoom_mode == 'in' else 1.25
+        x_range = (xlim[1] - xlim[0]) * zoom_factor
+        y_range = (ylim[1] - ylim[0]) * zoom_factor
+        
+        # Apply zoom
+        ax.set_xlim(x_center - x_range / 2, x_center + x_range / 2)
+        ax.set_ylim(y_center - y_range / 2, y_center + y_range / 2)
+        
         self.canvas.draw()
-        self._zoom_start = None
-        self._zoom_start_data = None
 
 
 def _is_time_column(series):
@@ -1812,10 +1827,12 @@ class InteractivePlotApp(tk.Toplevel):
 
         if self.initialization_plot == False:
             self.canvas.draw()
+            #self.toolbar.store_original_limits()
             self.initialization_plot = True
         else:
             self.canvas.draw()
-            self.firstplot = True
+            #self.toolbar.store_original_limits()
+            self.firstplot = True    
         
 
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
