@@ -72,7 +72,82 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         self.canvas.mpl_connect('button_press_event', self._fast_zoom_press)
         self.canvas.mpl_connect('button_release_event', self._fast_zoom_release)
         self.canvas.mpl_connect('motion_notify_event', self._fast_zoom_motion)
-    
+        # Create Zoom In and Zoom Out buttons next to "Configure Subplots"
+        self.zoom_mode = None  # Track zoom mode ('in' or 'out')
+
+        # Create Zoom In button
+        self.zoom_in_button = ttk.Button(self, text="Zoom In", command=self.toggle_zoom_in)
+        self.zoom_in_button.pack(side=tk.LEFT, padx=2, pady=2)
+
+        # Create Zoom Out button
+        self.zoom_out_button = ttk.Button(self, text="Zoom Out", command=self.toggle_zoom_out)
+        self.zoom_out_button.pack(side=tk.LEFT, padx=2, pady=2)
+
+        # Bind mouse click event for zooming
+        self.canvas.mpl_connect("button_press_event", self.perform_zoom)
+
+        # Store original limits for Home reset
+        self.store_original_limits()
+
+    def store_original_limits(self):
+        """Stores the original plot limits for resetting on 'Home' button click."""
+        ax = self.canvas.figure.axes[0]
+        self.original_xlim = ax.get_xlim()
+        self.original_ylim = ax.get_ylim()
+
+    def toggle_zoom_in(self):
+        """Activate or deactivate Zoom In mode."""
+        if self.zoom_mode == 'in':
+            self.exit_zoom_mode()
+        else:
+            self.zoom_mode = 'in'
+            self.config_zoom_button(self.zoom_in_button)
+            self.canvas.get_tk_widget().config(cursor="plus")  # Change cursor to magnifying glass
+
+    def toggle_zoom_out(self):
+        """Activate or deactivate Zoom Out mode."""
+        if self.zoom_mode == 'out':
+            self.exit_zoom_mode()
+        else:
+            self.zoom_mode = 'out'
+            self.config_zoom_button(self.zoom_out_button)
+            self.canvas.get_tk_widget().config(cursor="plus")  # Change cursor to magnifying glass
+
+    def config_zoom_button(self, active_button):
+        """Highlight active zoom button and reset the other."""
+        self.zoom_in_button.config(style="TButton")
+        self.zoom_out_button.config(style="TButton")
+
+        active_button.config(style="Active.TButton")  # Set the clicked button to green
+
+    def exit_zoom_mode(self):
+        """Exit zoom mode and reset UI."""
+        self.zoom_mode = None
+        self.zoom_in_button.config(style="TButton")
+        self.zoom_out_button.config(style="TButton")
+        self.canvas.get_tk_widget().config(cursor="")  # Reset cursor
+
+    def perform_zoom(self, event):
+        """Zoom in or out based on the last clicked position."""
+        if not self.zoom_mode or event.inaxes is None:
+            return  # Ignore if not in zoom mode
+
+        ax = event.inaxes
+        x_center, y_center = event.xdata, event.ydata
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+
+        # Determine zoom factor based on mode
+        zoom_factor = 0.8 if self.zoom_mode == 'in' else 1.25
+
+        # Apply zoom
+        x_range = (xlim[1] - xlim[0]) * zoom_factor
+        y_range = (ylim[1] - ylim[0]) * zoom_factor
+        ax.set_xlim(x_center - x_range / 2, x_center + x_range / 2)
+        ax.set_ylim(y_center - y_range / 2, y_center + y_range / 2)
+
+        self.canvas.draw()
+
     def _fast_zoom_press(self, event):
         if self.mode != 'zoom' or event.inaxes is None:
             return
@@ -113,18 +188,42 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         self._zoom_active = False
         if event.inaxes is None:
             return
+        # Get the initial click coordinates (we’ll use the minimum as the lower bound)
         x0, y0 = self._zoom_start_data
         x1, y1 = event.xdata, event.ydata
-        xmin, xmax = min(x0, x1), max(x0, x1)
-        ymin, ymax = min(y0, y1), max(y0, y1)
+        lower_x = min(x0, x1)
+        lower_y = min(y0, y1)
         ax = event.inaxes
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
+
+        # Gather all x and y data from the plotted lines in the axis
+        all_x = []
+        all_y = []
+        for line in ax.lines:
+            xd, yd = line.get_xdata(), line.get_ydata()
+            all_x.extend(xd)
+            all_y.extend(yd)
+
+        # Use the maximum data values as the upper bounds (with fallback if no data is available)
+        if all_x:
+            upper_x = max(all_x)
+        else:
+            upper_x = max(x0, x1)
+        if all_y:
+            upper_y = max(all_y)
+        else:
+            upper_y = max(y0, y1)
+
+        # Set the new limits: lower bound from the zoom start, and upper bound from the data
+        ax.set_xlim(lower_x, upper_x)
+        ax.set_ylim(lower_y, upper_y)
+
+        # Hide the zoom rectangle and redraw the canvas
         if self._zoom_rect is not None:
             self._zoom_rect.set_visible(False)
         self.canvas.draw()
         self._zoom_start = None
         self._zoom_start_data = None
+
 
 def _is_time_column(series):
     try:
@@ -198,6 +297,60 @@ class PaginatedOptionMenu:
         self.current_page = 0
         self.refresh_menu()
 
+
+class MovingAveragePopup:
+    def __init__(self, parent, plotted_columns, apply_callback):
+        """
+        parent: the parent widget (InteractivePlotApp instance)
+        plotted_columns: list of strings like "DF1: colname" or "DF2: colname" representing the columns currently plotted
+        apply_callback: a callback function that will be called with the set of selected columns when the user confirms
+        """
+        self.parent = parent
+        self.plotted_columns = plotted_columns
+        self.apply_callback = apply_callback
+        self.selected_columns = set()
+
+        self.popup = tk.Toplevel(parent)
+        self.popup.title("Select Moving Average Columns")
+        self.popup.geometry("300x400")
+
+        # Create an OptionMenu instead of a combobox with an Add button.
+        # When an option is selected, the callback (add_column) is invoked automatically.
+        self.column_var = tk.StringVar(self.popup)
+        if plotted_columns:
+            self.column_var.set(plotted_columns[0])
+        else:
+            self.column_var.set("")
+        self.option_menu = tk.OptionMenu(self.popup, self.column_var, *plotted_columns, command=self.add_column)
+        self.option_menu.pack(pady=5, fill=tk.X, padx=10)
+
+        # Listbox to display selected columns
+        self.listbox = tk.Listbox(self.popup)
+        self.listbox.pack(pady=5, fill=tk.BOTH, expand=True, padx=10)
+        self.listbox.bind("<Double-Button-1>", self.remove_column)
+
+        # Confirm button to finalize the selection
+        self.confirm_button = ttk.Button(self.popup, text="Confirm", command=self.confirm_selection)
+        self.confirm_button.pack(pady=5)
+
+    def add_column(self, value):
+        if value and value not in self.selected_columns:
+            self.selected_columns.add(value)
+            self.listbox.insert(tk.END, value)
+
+    def remove_column(self, event):
+        selected_index = self.listbox.curselection()
+        if selected_index:
+            column = self.listbox.get(selected_index[0])
+            if column in self.selected_columns:
+                self.selected_columns.remove(column)
+            self.listbox.delete(selected_index)
+
+    def confirm_selection(self):
+        self.apply_callback(self.selected_columns)
+        self.popup.destroy()
+
+
 class InteractivePlotApp(tk.Toplevel):
     def __init__(self, parent, df1, df2=None):
         super().__init__(parent)
@@ -254,6 +407,8 @@ class InteractivePlotApp(tk.Toplevel):
 
         self.selected_df1_columns = set()
         self.selected_df2_columns = set()
+        # New attribute to store the moving average (MA) columns (as strings like "DF1: colname") 
+        self.ma_columns = set()
 
         self.listbox_tooltip = None
         self.tooltip_after_id = None
@@ -285,6 +440,7 @@ class InteractivePlotApp(tk.Toplevel):
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=left_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.canvas.mpl_connect("button_press_event", self.on_legend_click)
 
         self.toolbar = FastZoomToolbar2Tk(self.canvas, left_frame)
         self.toolbar.update()
@@ -420,6 +576,67 @@ class InteractivePlotApp(tk.Toplevel):
         self.close_btn = ttk.Button(final_frame, text="Close", command=self.destroy)
         self.close_btn.pack(fill=tk.X, pady=2)
         self.plot_normal()
+
+    def on_legend_click(self, event):
+        if not self.legend_mapping:
+            return
+
+        renderer = self.fig.canvas.get_renderer()
+        to_remove = None  # Track which line needs removal
+
+        for text_obj, line_obj in self.legend_mapping.items():
+            bbox = text_obj.get_window_extent(renderer)
+            if bbox.contains(event.x, event.y) and event.dblclick:
+                label = text_obj.get_text()
+                
+                # Remove computed difference if label starts with "Difference:"
+                if label.startswith("Difference:"):
+                    self.computed_series = None
+                    self.persist_diff = False
+                # For moving average lines
+                elif "MA (" in label or "MA Time" in label:
+                    if "DF1:" in label:
+                        col = label.split("DF1:")[1].strip()
+                        key = "DF1: " + col
+                        if key in self.ma_columns:
+                            self.ma_columns.remove(key)
+                    elif "DF2:" in label:
+                        col = label.split("DF2:")[1].strip()
+                        key = "DF2: " + col
+                        if key in self.ma_columns:
+                            self.ma_columns.remove(key)
+                else:
+                    # For normal lines
+                    if label.startswith("DF1:"):
+                        col = label.split("DF1:")[1].strip()
+                        if col in self.selected_df1_columns:
+                            self.selected_df1_columns.remove(col)
+                    elif label.startswith("DF2:"):
+                        col = label.split("DF2:")[1].strip()
+                        if col in self.selected_df2_columns:
+                            self.selected_df2_columns.remove(col)
+
+                # Mark the legend item for removal
+                to_remove = text_obj
+                break
+
+        if to_remove:
+            del self.legend_mapping[to_remove]  # Remove from mapping
+            if self.firstplot == True:
+                old_xlim = self.ax.get_xlim()
+                old_ylim = self.ax.get_ylim()
+                self.create_plot()
+                self.ax.set_xlim(old_xlim)
+                self.ax.set_ylim(old_ylim)
+                self.canvas.draw()
+            else:
+                self.create_plot() # Redraw plot after removing the line
+
+            # If legend is now empty, reset the view
+            if not self.legend_mapping:
+                self.reset_view()
+
+
 
     def format_event(self, event_tuple):
         row_idx, ev_name = event_tuple
@@ -815,7 +1032,6 @@ class InteractivePlotApp(tk.Toplevel):
         first_menu.pack(padx=10, pady=5)
         tk.Label(dialog, text="Select second column to subtract:").pack(padx=10, pady=5)
         second_var = tk.StringVar(dialog)
-        # Default second selection (different from first)
         default_second = options[1] if options[1] != options[0] else options[0]
         second_var.set(default_second)
         second_menu = tk.OptionMenu(dialog, second_var, *options)
@@ -840,12 +1056,10 @@ class InteractivePlotApp(tk.Toplevel):
             return None, None
 
     def plot_difference(self):
-        # Open a dialog to choose two columns for subtraction
         first_sel, second_sel = self.choose_difference_columns()
         if not first_sel or not second_sel:
             self.data_operation = 'normal'
             return
-        # Parse the selections. They are strings like "DF1: colname" or "DF2: colname"
         src1, col1 = first_sel.split(": ", 1)
         src2, col2 = second_sel.split(": ", 1)
         if src1 == "DF1":
@@ -870,8 +1084,6 @@ class InteractivePlotApp(tk.Toplevel):
         self.common_time = common_time
         self.computed_label = f"Difference: {src1}:{col1} - {src2}:{col2}"
         self.data_operation = 'computed_difference'
-        self.difference_columns = [(src1, col1), (src2, col2)]
-        # Remove the subtracted columns from the sets of columns to be plotted normally
         if src1 == "DF1":
             self.selected_df1_columns.discard(col1)
         else:
@@ -892,12 +1104,12 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             self.create_plot()
 
+    # Modified moving average functions to open a popup for column selection.
     def plot_moving_average(self):
-        self.data_operation = 'moving_average'
         selections = []
-        selections.extend([("DF1", col) for col in self.selected_df1_columns])
+        selections.extend(["DF1: " + col for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
-            selections.extend([("DF2", col) for col in self.selected_df2_columns])
+            selections.extend(["DF2: " + col for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average", "Select at least one column for moving average.")
             self.data_operation = 'normal'
@@ -911,24 +1123,15 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average", "Enter a valid positive integer for the window.")
             self.data_operation = 'normal'
             return
-        print('moving average')
-        print(self.firstplot)
-        if self.firstplot == True:
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
-        else:
-            self.create_plot()
+        self.data_operation = 'moving_average'
+        # Open the popup to select which columns to apply moving average to.
+        MovingAveragePopup(self, selections, self.ma_popup_callback)
 
     def plot_moving_average_time(self):
-        self.data_operation = 'moving_average_time'
         selections = []
-        selections.extend([("DF1", col) for col in self.selected_df1_columns])
+        selections.extend(["DF1: " + col for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
-            selections.extend([("DF2", col) for col in self.selected_df2_columns])
+            selections.extend(["DF2: " + col for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average (Time)", "Select at least one column for moving average by time window.")
             self.data_operation = 'normal'
@@ -942,8 +1145,12 @@ class InteractivePlotApp(tk.Toplevel):
             messagebox.showerror("Moving Average (Time)", "Enter a valid positive number for the time window (in seconds).")
             self.data_operation = 'normal'
             return
-        print('moving average time')
-        print(self.firstplot)
+        self.data_operation = 'moving_average_time'
+        MovingAveragePopup(self, selections, self.ma_popup_callback)
+
+    def ma_popup_callback(self, selected_columns):
+        # Callback from the MovingAveragePopup: store the selected columns and replot.
+        self.ma_columns = set(selected_columns)
         if self.firstplot == True:
             old_xlim = self.ax.get_xlim()
             old_ylim = self.ax.get_ylim()
@@ -968,34 +1175,42 @@ class InteractivePlotApp(tk.Toplevel):
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column], self.computed_label: self.computed_series})
             elif self.data_operation == 'moving_average':
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = list(self.selected_df1_columns)
-                for col in df1_selected:
-                    ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
-                    result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
-                if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = list(self.selected_df2_columns)
-                    for col in df2_selected:
-                        ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
-                        result_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
+                for col in self.selected_df1_columns:
+                    if f"DF1: {col}" in self.ma_columns:
+                        ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
+                        result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                    else:
+                        result_df[f"DF1: {col}"] = self.df1[col]
+                if self.df2 is not None:
+                    for col in self.selected_df2_columns:
+                        if f"DF2: {col}" in self.ma_columns:
+                            ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
+                            result_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
+                        else:
+                            result_df[f"DF2: {col}"] = self.df2[col]
             elif self.data_operation == 'moving_average_time':
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = list(self.selected_df1_columns)
-                for col in df1_selected:
-                    t = self.df1_time
-                    series = pd.to_numeric(self.df1[col], errors='coerce')
-                    series.index = t
-                    window_str = f"{self.ma_window}s"
-                    ma = series.rolling(window=window_str, min_periods=1).mean()
-                    result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
-                if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = list(self.selected_df2_columns)
-                    for col in df2_selected:
-                        t = self.df2_time
-                        series = pd.to_numeric(self.df2[col], errors='coerce')
+                for col in self.selected_df1_columns:
+                    if f"DF1: {col}" in self.ma_columns:
+                        t = self.df1_time
+                        series = pd.to_numeric(self.df1[col], errors='coerce')
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         ma = series.rolling(window=window_str, min_periods=1).mean()
-                        result_df[f"MA Time ({self.ma_window}s): DF2:{col}"] = ma
+                        result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
+                    else:
+                        result_df[f"DF1: {col}"] = self.df1[col]
+                if self.df2 is not None:
+                    for col in self.selected_df2_columns:
+                        if f"DF2: {col}" in self.ma_columns:
+                            t = self.df2_time
+                            series = pd.to_numeric(self.df2[col], errors='coerce')
+                            series.index = t
+                            window_str = f"{self.ma_window}s"
+                            ma = series.rolling(window=window_str, min_periods=1).mean()
+                            result_df[f"MA Time ({self.ma_window}s): DF2:{col}"] = ma
+                        else:
+                            result_df[f"DF2: {col}"] = self.df2[col]
             if "Event" in self.df1.columns:
                 result_df["Event"] = self.df1["Event"]
             for c_idx, header in enumerate(result_df.columns, start=1):
@@ -1006,12 +1221,10 @@ class InteractivePlotApp(tk.Toplevel):
             start_row = start_row + result_df.shape[0] + 2
         else:
             df_to_save = pd.DataFrame({self.time_column: pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')})
-            df1_selected = list(self.selected_df1_columns)
-            for col in df1_selected:
+            for col in self.selected_df1_columns:
                 df_to_save[f"DF1: {col}"] = self.df1[col]
-            if self.df2 is not None and self.df2_listbox is not None:
-                df2_selected = list(self.selected_df2_columns)
-                for col in df2_selected:
+            if self.df2 is not None:
+                for col in self.selected_df2_columns:
                     df_to_save[f"DF2: {col}"] = self.df2[col]
             if "Event" in self.df1.columns:
                 df_to_save["Event"] = self.df1["Event"]
@@ -1068,44 +1281,50 @@ class InteractivePlotApp(tk.Toplevel):
                 data_df = pd.DataFrame({self.time_column: self.df1[self.time_column], self.computed_label: self.computed_series})
             elif self.data_operation == 'moving_average':
                 data_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = list(self.selected_df1_columns)
-                for col in df1_selected:
-                    ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
-                    data_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                for col in self.selected_df1_columns:
+                    if f"DF1: {col}" in self.ma_columns:
+                        ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
+                        data_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                    else:
+                        data_df[f"DF1: {col}"] = self.df1[col]
                 if self.df2 is not None:
-                    df2_selected = list(self.selected_df2_columns)
-                    for col in df2_selected:
-                        ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
-                        data_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
+                    for col in self.selected_df2_columns:
+                        if f"DF2: {col}" in self.ma_columns:
+                            ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
+                            data_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
+                        else:
+                            data_df[f"DF2: {col}"] = self.df2[col]
             elif self.data_operation == 'moving_average_time':
                 data_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
-                df1_selected = list(self.selected_df1_columns)
-                for col in df1_selected:
-                    t = self.df1_time
-                    series = self.df1[col].copy()
-                    series.index = t
-                    window_str = f"{self.ma_window}s"
-                    ma = series.rolling(window=window_str, min_periods=1).mean()
-                    data_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
-                if self.df2 is not None:
-                    df2_selected = list(self.selected_df2_columns)
-                    for col in df2_selected:
-                        t = self.df2_time
-                        series = self.df2[col].copy()
+                for col in self.selected_df1_columns:
+                    if f"DF1: {col}" in self.ma_columns:
+                        t = self.df1_time
+                        series = self.df1[col].copy()
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         ma = series.rolling(window=window_str, min_periods=1).mean()
-                        data_df[f"MA Time ({self.ma_window}s): DF2:{col}"] = ma
+                        data_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
+                    else:
+                        data_df[f"DF1: {col}"] = self.df1[col]
+                if self.df2 is not None:
+                    for col in self.selected_df2_columns:
+                        if f"DF2: {col}" in self.ma_columns:
+                            t = self.df2_time
+                            series = self.df2[col].copy()
+                            series.index = t
+                            window_str = f"{self.ma_window}s"
+                            ma = series.rolling(window=window_str, min_periods=1).mean()
+                            data_df[f"MA Time ({self.ma_window}s): DF2:{col}"] = ma
+                        else:
+                            data_df[f"DF2: {col}"] = self.df2[col]
             if "Event" in self.df1.columns:
                 data_df["Event"] = self.df1["Event"]
         else:
             data_df = pd.DataFrame({self.time_column: pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')})
-            df1_selected = list(self.selected_df1_columns)
-            for col in df1_selected:
+            for col in self.selected_df1_columns:
                 data_df[f"DF1: {col}"] = self.df1[col]
             if self.df2 is not None:
-                df2_selected = list(self.selected_df2_columns)
-                for col in df2_selected:
+                for col in self.selected_df2_columns:
                     data_df[f"DF2: {col}"] = self.df2[col]
             if "Event" in self.df1.columns:
                 data_df["Event"] = self.df1["Event"]
@@ -1205,12 +1424,10 @@ class InteractivePlotApp(tk.Toplevel):
             formatted_time = pd.to_datetime(self.df1[self.time_column], format="%H:%M:%S").dt.strftime('%H:%M:%S')
             if save_full_data:
                 df_to_save = pd.DataFrame({self.time_column: formatted_time})
-                df1_selected = list(self.selected_df1_columns)
-                for col in df1_selected:
+                for col in self.selected_df1_columns:
                     df_to_save[f"DF1: {col}"] = self.df1[col]
-                if self.df2 is not None and self.df2_listbox is not None:
-                    df2_selected = list(self.selected_df2_columns)
-                    for col in df2_selected:
+                if self.df2 is not None:
+                    for col in self.selected_df2_columns:
                         df_to_save[f"DF2: {col}"] = self.df2[col]
                 if "Event" in self.df1.columns:
                     df_to_save["Event"] = self.df1["Event"]
@@ -1224,19 +1441,23 @@ class InteractivePlotApp(tk.Toplevel):
                 if self.data_operation == 'computed_difference' and self.computed_series is not None:
                     result_df[self.computed_label] = self.computed_series
                 elif self.data_operation == 'moving_average':
-                    df1_selected = list(self.selected_df1_columns)
-                    for col in df1_selected:
-                        ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
-                        result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                    for col in self.selected_df1_columns:
+                        if f"DF1: {col}" in self.ma_columns:
+                            ma = self.df1[col].rolling(self.ma_window, min_periods=1).mean()
+                            result_df[f"MA ({self.ma_window}): DF1:{col}"] = ma
+                    for col in self.selected_df2_columns:
+                        if f"DF2: {col}" in self.ma_columns:
+                            ma = self.df2[col].rolling(self.ma_window, min_periods=1).mean()
+                            result_df[f"MA ({self.ma_window}): DF2:{col}"] = ma
                 elif self.data_operation == 'moving_average_time':
-                    df1_selected = list(self.selected_df1_columns)
-                    for col in df1_selected:
-                        t = self.df1_time
-                        series = self.df1[col].copy()
-                        series.index = t
-                        window_str = f"{self.ma_window}s"
-                        ma = series.rolling(window=window_str, min_periods=1).mean()
-                        result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
+                    for col in self.selected_df1_columns:
+                        if f"DF1: {col}" in self.ma_columns:
+                            t = self.df1_time
+                            series = self.df1[col].copy()
+                            series.index = t
+                            window_str = f"{self.ma_window}s"
+                            ma = series.rolling(window=window_str, min_periods=1).mean()
+                            result_df[f"MA Time ({self.ma_window}s): DF1:{col}"] = ma
                 start_row = 1
                 for c_idx, header in enumerate(result_df.columns, start=1):
                     ws.cell(row=start_row, column=empty_col + c_idx, value=header)
@@ -1325,8 +1546,6 @@ class InteractivePlotApp(tk.Toplevel):
                 if color not in used_colors:
                     return color
 
-        # If computed_difference mode, plot the computed difference series first,
-        # then plot the remaining normally selected columns.
         if self.data_operation == 'computed_difference':
             if self.common_time is None or self.computed_series is None:
                 messagebox.showerror("Plot Difference", "No computed difference data available.")
@@ -1336,7 +1555,6 @@ class InteractivePlotApp(tk.Toplevel):
                 self.ax.plot(self.common_time, self.computed_series,
                              label=self.computed_label, color=comp_color, picker=5)
                 self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
-            # Plot remaining DF1 columns not used for subtraction
             rem_df1 = [col for col in self.selected_df1_columns]
             for col in rem_df1:
                 try:
@@ -1354,7 +1572,6 @@ class InteractivePlotApp(tk.Toplevel):
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
                     continue
-            # Plot remaining DF2 columns not used for subtraction
             if self.df2 is not None:
                 rem_df2 = [col for col in self.selected_df2_columns]
                 for col in rem_df2:
@@ -1374,77 +1591,94 @@ class InteractivePlotApp(tk.Toplevel):
                         messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
                         continue
         elif self.data_operation == 'moving_average':
-            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for col in df1_selected:
+            # For DF1 columns: if the column is in the moving average selection, compute MA; otherwise, plot normally.
+            for col in self.selected_df1_columns:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
-                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                    if f"DF1: {col}" in self.ma_columns:
+                        y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                        label = f"MA ({self.ma_window}): DF1:{col}"
+                    else:
+                        y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                        label = f"DF1: {col}"
                     candidate = self.colors_df1.get(col)
                     if candidate is None or candidate in used_colors:
                         candidate = get_unique_color(used_colors)
                         self.colors_df1[col] = candidate
                     used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF1:{col}", color=candidate, picker=5)
+                    self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
                 except Exception as e:
-                    messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF1) failed: {e}")
+                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
             if self.df2 is not None:
-                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for col in df2_selected:
+                for col in self.selected_df2_columns:
                     try:
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
-                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                        if f"DF2: {col}" in self.ma_columns:
+                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                            label = f"MA ({self.ma_window}): DF2:{col}"
+                        else:
+                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
+                            label = f"DF2: {col}"
                         candidate = self.colors_df2.get(col)
                         if candidate is None or candidate in used_colors:
                             candidate = get_unique_color(used_colors)
                             self.colors_df2[col] = candidate
                         used_colors.add(candidate)
-                        self.ax.plot(t_sec, y_vals, label=f"MA ({self.ma_window}): DF2:{col}", color=candidate, picker=5)
+                        self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
                     except Exception as e:
-                        messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF2) failed: {e}")
+                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
         elif self.data_operation == 'moving_average_time':
-            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for col in df1_selected:
+            # For DF1 columns in time-based moving average mode.
+            for col in self.selected_df1_columns:
                 try:
                     t = self.df1_time
                     t_sec = (t - common_ref).dt.total_seconds().values
-                    series = pd.to_numeric(self.df1[col], errors='coerce')
-                    series.index = t
-                    window_str = f"{self.ma_window}s"
-                    y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                    if f"DF1: {col}" in self.ma_columns:
+                        series = pd.to_numeric(self.df1[col], errors='coerce')
+                        series.index = t
+                        window_str = f"{self.ma_window}s"
+                        y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                        label = f"MA Time ({self.ma_window}s): DF1:{col}"
+                    else:
+                        y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                        label = f"DF1: {col}"
                     candidate = self.colors_df1.get(col)
                     if candidate is None or candidate in used_colors:
                         candidate = get_unique_color(used_colors)
                         self.colors_df1[col] = candidate
                     used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF1:{col}", color=candidate, picker=5)
+                    self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
                 except Exception as e:
                     messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
             if self.df2 is not None:
-                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for col in df2_selected:
+                for col in self.selected_df2_columns:
                     try:
                         t = self.df2_time
                         t_sec = (t - common_ref).dt.total_seconds().values
-                        series = pd.to_numeric(self.df2[col], errors='coerce')
-                        series.index = t
-                        window_str = f"{self.ma_window}s"
-                        y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                        if f"DF2: {col}" in self.ma_columns:
+                            series = pd.to_numeric(self.df2[col], errors='coerce')
+                            series.index = t
+                            window_str = f"{self.ma_window}s"
+                            y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                            label = f"MA Time ({self.ma_window}s): DF2:{col}"
+                        else:
+                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
+                            label = f"DF2: {col}"
                         candidate = self.colors_df2.get(col)
                         if candidate is None or candidate in used_colors:
                             candidate = get_unique_color(used_colors)
                             self.colors_df2[col] = candidate
                         used_colors.add(candidate)
-                        self.ax.plot(t_sec, y_vals, label=f"MA Time ({self.ma_window}s): DF2:{col}", color=candidate, picker=5)
+                        self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
         else:
-            # Normal plot of DF1 and DF2 columns
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
@@ -1506,6 +1740,8 @@ class InteractivePlotApp(tk.Toplevel):
                 self.xy_data.append((ev_sec, 0))
                 self.event_line_labels[line] = short_label
         handles, labels = self.ax.get_legend_handles_labels()
+
+        # Ensure event lines keep their full label
         if self.event_lines:
             for line, full_label in self.event_lines:
                 for j, handle in enumerate(handles):
@@ -1513,21 +1749,33 @@ class InteractivePlotApp(tk.Toplevel):
                         labels[j] = full_label
                         break
             self.event_lines = []
+
+        # Reverse order for better legend display
         if handles:
             handles = handles[::-1]
             labels = labels[::-1]
-            max_items = 15  # allow up to 15 legend items (3 columns x 5 items each)
+
+            # Limit legend size to 15 items (adjustable)
+            max_items = 15  # 3 columns x 5 rows max
             if len(labels) > max_items:
                 handles = handles[:max_items]
                 labels = labels[:max_items]
+
+            # Determine number of columns dynamically
             if len(labels) <= 5:
                 ncol = 1
             elif len(labels) <= 10:
                 ncol = 2
             else:
                 ncol = 3
-            self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08),
-                           ncol=ncol, columnspacing=2.0)
+
+            # Create legend in upper-left with adjusted spacing
+            leg = self.ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08),
+                                ncol=ncol, columnspacing=2.0)
+
+            # Update legend mapping for interactive removal on double-click
+            self.legend_mapping = {text_obj: handle for text_obj, handle in zip(leg.get_texts(), handles)}
+
         self.ax.set_xlabel("Elapsed Time [s]")
         self.ax.set_ylabel("Values")
         self.ax.ticklabel_format(style='plain', axis='x')
