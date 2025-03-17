@@ -1835,7 +1835,15 @@ class InteractivePlotApp(tk.Toplevel):
             self.firstplot = True    
         
 
-def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
+def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event, output_file):
+    with open("output_file.txt", "r") as file:
+        line = file.readline().strip()
+    print(line)
+    if os.path.isfile(line):
+        os.remove(line)
+    if os.path.isfile('output_file.txt'):
+        os.remove('output_file.txt')
+        
     if os.path.isfile('output0.csv'):
         df1 = pd.read_csv('output0.csv')
     else:

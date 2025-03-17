@@ -122,91 +122,7 @@ def truncate_text(text, max_length=30):
         return text[:max_length - 3] + "..."
     return text
 
-def select_output(folder_label3, clean_paths,
-        output_folder_label,
-        file1_optionmenu,
-        file1_optionmenu_var,
-        file2_optionmenu_var,
-        file1_listboxfile,
-        limit1_entry,
-        limit2_entry, 
-        nvalues_entry,
-        checkbox_threshold,
-        checkbox_align,
-        unit_var,
-        checkbox_plot,
-        condition_var,
-        pass_fail_var,
-        file1_column_option,
-        file1_listbox,
-        output_frame,
-        file1_frame,
-        file2_frame,
-        analysis_frame,
-        checkbox_event,
-        start_event_var,
-        end_event_var,
-        file1_folder_label,
-        file2_folder_label,
-        start_event_option,
-        end_event_option,
-        event_listbox2,
-        event_listbox1,
-        event_filter_entry1,
-        event_filter_entry2,
-        unit_option_menu,
-        file2_column_option_var,
-        file1_column_option_var,
-        checkbox_advance):
-    elements = [
-        clean_paths,
-        output_folder_label,
-        file1_optionmenu,
-        file1_optionmenu_var,
-        file2_optionmenu_var,
-        file1_listboxfile,
-        limit1_entry,
-        limit2_entry, 
-        nvalues_entry,
-        checkbox_threshold,
-        checkbox_align,
-        unit_var,
-        checkbox_plot,
-        condition_var,
-        pass_fail_var,
-        file1_column_option,
-        file1_listbox,
-        output_frame,
-        file1_frame,
-        file2_frame,
-        analysis_frame,
-        checkbox_event.get(),
-        start_event_var,
-        end_event_var,
-        file1_optionmenu,
-        file1_folder_label,
-        file2_folder_label,
-        file1_listbox,
-        file1_listboxfile,
-        checkbox_event,
-        start_event_option,
-        end_event_option,
-        event_listbox2,
-        event_listbox1,
-        event_filter_entry1,
-        event_filter_entry2,
-        start_event_var,
-        end_event_var,
-        file1_listbox,
-        file1_optionmenu,  # OptionMenu widget
-        limit1_entry,
-        limit2_entry,
-        nvalues_entry,
-        unit_option_menu,  
-        file2_column_option_var,
-        file1_column_option_var,
-        checkbox_advance
-    ]
+def select_output(folder_label3):
     try:
         global output_path
         global output_file
@@ -218,6 +134,8 @@ def select_output(folder_label3, clean_paths,
         if output_path:
             folder_label3.configure(text=truncate_text(output_path, 200))
         output_file=output_path + 'Result' + str(datetime.now().strftime("%Y-%m-%d %H-%M-%S")+'.xlsx')
+        with open("output_file.txt", "w") as file:
+            file.write(output_file)
         wb = openpyxl.Workbook()
         sheet_name = "Files"  # Change this to your desired sheet name
         

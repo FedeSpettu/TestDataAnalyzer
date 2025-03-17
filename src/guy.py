@@ -12,8 +12,6 @@ from src.usefull_functions import auto_detect_delimiter
 import time
 from src.interactive_tkinter_called import rapid_analysis
 
-
-
 # --- Utility Functions --- #
 def folderanalysis(clean_paths, drop1, drop2, clickedfolder1, clickedfolder2, file_list2,
                      text_input1, text_input2, text_input3, checkbox_var, checkbox_var1,
@@ -257,42 +255,7 @@ def populate_scrollable_frame(main_frame):
     label_status=ctk.CTkLabel(output_frame, text="Status: "+str(status))
     label_status.grid(row=0, column=2, padx=10, pady=5, sticky="w")
     output_folder_button = ctk.CTkButton(output_frame, text="Select Output Folder",
-                                         command=lambda: st.select_output(output_folder_label, clean_paths,
-        output_folder_label,
-        file1_optionmenu,
-        file1_optionmenu_var,
-        file2_optionmenu_var,
-        file1_listboxfile,
-        limit1_entry,
-        limit2_entry, 
-        nvalues_entry,
-        checkbox_threshold,
-        checkbox_align,
-        unit_var,
-        checkbox_plot,
-        condition_var,
-        pass_fail_var,
-        file1_column_option,
-        file1_listbox,
-        output_frame,
-        file1_frame,
-        file2_frame,
-        analysis_frame,
-        checkbox_event,
-        start_event_var,
-        end_event_var,
-        file1_folder_label,
-        file2_folder_label,
-        start_event_option,
-        end_event_option,
-        event_listbox2,
-        event_listbox1,
-        event_filter_entry1,
-        event_filter_entry2,
-        unit_option_menu,
-        file2_column_option_var,
-        file1_column_option_var,
-        checkbox_advance))
+                                         command=lambda: st.select_output(output_folder_label))
     output_folder_button.grid(row=1, column=0, padx=10, pady=5, sticky="w")
     output_folder_label = ctk.CTkLabel(output_frame, text="No folder selected", width=100)
     output_folder_label.grid(row=1, column=1, padx=10, pady=5, sticky="w")
@@ -863,7 +826,7 @@ def populate_scrollable_frame(main_frame):
         files_to_remove = [
             'options_multi.txt', 'options.txt', 'options1.txt', 'options2.txt',
             'output0.csv', 'output1.csv', 'check.csv', 'data.csv', 'backup.csv',
-            'backupdf2.csv', 'backupprova.csv', 'prova2.csv', 'plot.png', 'options_event.txt', 'prova1.csv', 'prova3.csv', 'prova.csv', 'output1_modified.csv','output0_modified.csv','output1check.csv','output0check.csv', 'interactive_plot.txt'
+            'backupdf2.csv', 'backupprova.csv', 'prova2.csv', 'plot.png', 'options_event.txt', 'prova1.csv', 'prova3.csv', 'prova.csv', 'output1_modified.csv','output0_modified.csv','output1check.csv','output0check.csv', 'interactive_plot.txt', 'output_file.txt'
         ]
         for file in files_to_remove:
             if os.path.isfile(file):
