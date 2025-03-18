@@ -736,6 +736,32 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             return t1.min()
 
+
+    def initiate_custom_event(self):
+        custom_event = askstring("Custom Event", "Enter custom event name:")
+        if custom_event:
+            self.custom_event_mode = True
+            self.custom_event_name = custom_event
+            if custom_event not in [ev[1] for ev in self.custom_events]:
+                self.custom_events.append(custom_event)
+            #messagebox.showinfo("Custom Event", "Move your mouse over the chart to see the vertical line, then click to add the event.")
+            # Connect both the click and the motion event callbacks.
+            self.custom_event_cid = self.canvas.mpl_connect("button_press_event", self.on_custom_event_click)
+            self.custom_event_motion_cid = self.canvas.mpl_connect("motion_notify_event", self.on_custom_event_motion)
+
+
+    def on_custom_event_motion(self, event):
+        if self.custom_event_mode and event.inaxes == self.ax and event.xdata is not None:
+            # Get current y-limits to ensure the line spans the full height.
+            ymin, ymax = self.ax.get_ylim()
+            if not hasattr(self, 'custom_event_vline') or self.custom_event_vline is None:
+                self.custom_event_vline = self.ax.axvline(x=event.xdata, color='gray', linestyle='--', alpha=0.5)
+            else:
+                # Update both the x data and the y span.
+                self.custom_event_vline.set_data([event.xdata, event.xdata], [ymin, ymax])
+            self.canvas.draw_idle()
+
+
     def on_custom_event_click(self, event):
         if self.custom_event_mode and event.inaxes == self.ax:
             common_ref = self.get_common_reference()
@@ -748,11 +774,16 @@ class InteractivePlotApp(tk.Toplevel):
                 self.selected_events.append(event_tuple)
             timestamp = (common_ref + pd.Timedelta(seconds=event.xdata)).strftime('%H:%M:%S')
             messagebox.showinfo("Custom Event", f"Event '{self.custom_event_name}' added at timestamp {timestamp}")
+            # Remove the vertical mask if it exists.
+            if hasattr(self, 'custom_event_vline') and self.custom_event_vline is not None:
+                self.custom_event_vline.remove()
+                self.custom_event_vline = None
+            # Disconnect both custom event callbacks.
+            self.canvas.mpl_disconnect(self.custom_event_motion_cid)
             self.canvas.mpl_disconnect(self.custom_event_cid)
             self.custom_event_mode = False
-            print('on_custom_event_click')
-            print(self.firstplot)
-            if self.firstplot == True:
+            # Replot the chart, preserving the current view if needed.
+            if self.firstplot:
                 old_xlim = self.ax.get_xlim()
                 old_ylim = self.ax.get_ylim()
                 self.create_plot()
@@ -761,16 +792,6 @@ class InteractivePlotApp(tk.Toplevel):
                 self.canvas.draw()
             else:
                 self.create_plot()
-
-    def initiate_custom_event(self):
-        custom_event = askstring("Custom Event", "Enter custom event name:")
-        if custom_event:
-            self.custom_event_mode = True
-            self.custom_event_name = custom_event
-            if custom_event not in [ev[1] for ev in self.custom_events]:
-                self.custom_events.append(custom_event)
-            messagebox.showinfo("Custom Event", "Click on the chart to add the event.")
-            self.custom_event_cid = self.canvas.mpl_connect("button_press_event", self.on_custom_event_click)
 
     def on_hover(self, event):
         if event.inaxes != self.ax:
