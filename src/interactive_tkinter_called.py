@@ -84,10 +84,10 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         self.canvas.mpl_connect('motion_notify_event', self._on_motion)
         
         # Create zoom buttons
-        self.zoom_in_button = ttk.Button(self, text="Zoom In", command=self._toggle_zoom_in)
+        self.zoom_in_button = tk.Button(self, text="Zoom In", command=self._toggle_zoom_in)
         self.zoom_in_button.pack(side=tk.LEFT, padx=2, pady=2)
         
-        self.zoom_out_button = ttk.Button(self, text="Zoom Out", command=self._toggle_zoom_out)
+        self.zoom_out_button = tk.Button(self, text="Zoom Out", command=self._toggle_zoom_out)
         self.zoom_out_button.pack(side=tk.LEFT, padx=2, pady=2)
         
         # Override home button functionality
@@ -121,7 +121,7 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         else:
             self.zoom_mode = 'in'
             self._configure_zoom_buttons(self.zoom_in_button)
-            self.canvas.get_tk_widget().config(cursor="plus")
+            
     
     def _toggle_zoom_out(self):
         """Toggle zoom out mode"""
@@ -131,19 +131,16 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         else:
             self.zoom_mode = 'out'
             self._configure_zoom_buttons(self.zoom_out_button)
-            self.canvas.get_tk_widget().config(cursor="plus")
-    
+              
     def _configure_zoom_buttons(self, active_button):
         """Configure zoom button appearance"""
-        self.zoom_in_button.config(style="TButton")
-        self.zoom_out_button.config(style="TButton")
-        active_button.config(style="Active.TButton")
+        active_button.config(bg="green", fg="white")
     
     def _exit_zoom_mode(self):
         """Exit zoom mode"""
         self.zoom_mode = None
-        self.zoom_in_button.config(style="TButton")
-        self.zoom_out_button.config(style="TButton")
+        self.zoom_in_button.config(bg="SystemButtonFace", fg="black")
+        self.zoom_out_button.config(bg="SystemButtonFace", fg="black")
         self.canvas.get_tk_widget().config(cursor="")
     
     def _on_press(self, event):
