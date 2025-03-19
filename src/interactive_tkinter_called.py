@@ -1766,7 +1766,7 @@ class InteractivePlotApp(tk.Toplevel):
                         ev_sec = (row_time - common_ref).total_seconds()
                     except Exception:
                         continue
-                short_label = f"({ev_sec:.1f}s) {ev_name}"
+                short_label = f"({ev_sec:.1f}s): {ev_name}"
                 full_label = f"Row {row_idx+2} ({ev_sec:.1f}s): {ev_name}"
                 line = self.ax.axvline(x=ev_sec, color=event_color, linestyle='dotted', picker=5, label=short_label)
                 self.event_lines.append((line, full_label))
