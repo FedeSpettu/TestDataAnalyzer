@@ -28,7 +28,7 @@ def show_main_window():
     
     # Dimensioni adattive per lo schermo
     main_width = 1200  
-    main_height = 800
+    main_height = 730
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     x = (screen_width - main_width) // 2
