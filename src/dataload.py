@@ -315,8 +315,9 @@ def load_data_mult(file_path):
 # Extract data rows from file 
 def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry2, stringtime1,
             stringtime2):
-    global start_time_1, start_time_2
+    
     try:
+        global start_time_1, start_time_2,k
         global output_path
         directory_path = folder_path + '/' + file_path
         print(directory_path)
@@ -362,42 +363,76 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
 
         keep, keep2 = find_data(file_path)
         delimiter = auto_detect_delimiter(file_path)
+        
         pattern = re.compile(delimiter)  # Compila una volta la regex
+        
+            
         files_selection.append(file_path)
         print("File selection:", files_selection)
-        with open(file_path, 'r') as f:
-            rows = [pattern.split(line.strip()) for line in f]
-           
-            data_to_save = [rows[i] for i in sorted(keep)]
-            df = pd.DataFrame(data_to_save)
-           
-            if len(keep2) != 0:
-           
-                # Read the file content into a variable
-                f.seek(0)
-                rows = [pattern.split(line.strip()) for line in f]
-               
-                data_to_save = [rows[i] for i in sorted(keep2)]
-                df1 = pd.DataFrame(data_to_save)
-           
-                df = pd.concat([df, df1], axis=1)
-        output='output'+str(k)+'.csv' 
-        if output=='output0.csv':
-            if start_time_datalog != '':
-                stringtime1.set(start_time_datalog)
-            elif  start_time_diagnostic != '':
-                stringtime1.set(start_time_diagnostic)
-            elif  start_time_json != '':
-                stringtime1.set(start_time_json)
+        print("File delimiter:", delimiter)
+        if match:
+            try:
+                print("is Datalog")
+                df = pd.read_csv(file_path, encoding='latin1', engine='python')
+
+                # Prepare the output filename.
+                output = 'output' + str(k) + '.csv'
+                print('Output filename prepared')
+                # Set time string variables based on the output name.
+                if output == 'output0.csv':
+                    if start_time_datalog != '':
+                        stringtime1.set(start_time_datalog)
+                    elif start_time_diagnostic != '':
+                        stringtime1.set(start_time_diagnostic)
+                    elif start_time_json != '':
+                        stringtime1.set(start_time_json)
+                else:
+                    if start_time_datalog != '':
+                        stringtime2.set(start_time_datalog)
+                    elif start_time_diagnostic != '':
+                        stringtime2.set(start_time_diagnostic)
+                    elif start_time_json != '':
+                        stringtime2.set(start_time_json)
+
+                # Write the resulting DataFrame to a CSV file without row indices or headers.
+                df.to_csv(output, index=False)
+                print(("File saved:", output))
+            except Exception as e:
+                print("An error occurred:", e)
         else:
-            if start_time_datalog != '':
-                stringtime2.set(start_time_datalog)
-            elif  start_time_diagnostic != '':
-                stringtime2.set(start_time_diagnostic)
-            elif  start_time_json != '':
-                stringtime2.set(start_time_json)
-        
-        df.to_csv(output, index=False, header=False)
+            with open(file_path, 'r') as f:
+                rows = [pattern.split(line.strip()) for line in f]
+            
+                data_to_save = [rows[i] for i in sorted(keep)]
+                df = pd.DataFrame(data_to_save)
+            
+                if len(keep2) != 0:
+            
+                    # Read the file content into a variable
+                    f.seek(0)
+                    rows = [pattern.split(line.strip()) for line in f]
+                
+                    data_to_save = [rows[i] for i in sorted(keep2)]
+                    df1 = pd.DataFrame(data_to_save)
+            
+                    df = pd.concat([df, df1], axis=1)
+            output='output'+str(k)+'.csv' 
+            if output=='output0.csv':
+                if start_time_datalog != '':
+                    stringtime1.set(start_time_datalog)
+                elif  start_time_diagnostic != '':
+                    stringtime1.set(start_time_diagnostic)
+                elif  start_time_json != '':
+                    stringtime1.set(start_time_json)
+            else:
+                if start_time_datalog != '':
+                    stringtime2.set(start_time_datalog)
+                elif  start_time_diagnostic != '':
+                    stringtime2.set(start_time_diagnostic)
+                elif  start_time_json != '':
+                    stringtime2.set(start_time_json)
+            
+            df.to_csv(output, index=False, header=False)
            
     except Exception as e:
         root=tk.Tk()
