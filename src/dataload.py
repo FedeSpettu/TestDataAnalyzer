@@ -360,17 +360,10 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
             time_part = match.group(1)
             start_time_datalog = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"
             #print(start_time_datalog)
-
-        keep, keep2 = find_data(file_path)
-        delimiter = auto_detect_delimiter(file_path)
-        
-        pattern = re.compile(delimiter)  # Compila una volta la regex
-        
             
         files_selection.append(file_path)
-        print("File selection:", files_selection)
-        print("File delimiter:", delimiter)
-        if match:
+        file_ext = file_path.split('.')[-1]
+        if file_ext == 'csv':
             try:
                 print("is Datalog")
                 df = pd.read_csv(file_path, encoding='latin1', engine='python')
@@ -400,6 +393,10 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
             except Exception as e:
                 print("An error occurred:", e)
         else:
+            keep, keep2 = find_data(file_path)
+            delimiter = auto_detect_delimiter(file_path)
+            
+            pattern = re.compile(delimiter)  # Compila una volta la regex
             with open(file_path, 'r') as f:
                 rows = [pattern.split(line.strip()) for line in f]
             
