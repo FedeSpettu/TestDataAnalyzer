@@ -310,14 +310,14 @@ def load_data_mult(file_path):
         messagebox.showerror("Critical Error", str(e.args))
     
     #column_selection(output,  drop2, clicked2, file_list2)
-
+from pathlib import Path
 # Extract data rows from file 
 def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry2):
    
     try:
+        global start_time_1, start_time_2,k
         global output_path
         directory_path = folder_path + '/' + file_path
- 
         # Regular expression pattern to match 'diagnostic' in a file name
         pattern = re.compile(r'DiagnosticLog', re.IGNORECASE)
  
@@ -325,20 +325,14 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         file_path = folder_path + '\\' + file_path
         file_ext = file_path.split('.')[-1]
  
-        # if pattern.search(directory_path):
-        #     output_name=sd.scrub_diagnostic(directory_path)
-        #     file_path=output_name
-           
-        # elif file_ext == 'json':
-        #     output_name=sj.scrub_json(directory_path)
-        #     file_path=output_name
         output_name=sd.scrub_diagnostic(directory_path)
         if output_name:
             file_path=output_name
+            #print("start_time_diagnostic:" ,start_time_diagnostic)
+            
            
         if output_name == False:
             output_name=sj.scrub_json(directory_path)
- 
         if output_name:  
             file_path=output_name
  
@@ -346,28 +340,59 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
             df = pd.read_excel(file_path)
             df.to_csv('data.csv', index=False)
             file_path='data.csv'
-           
+
+        filename = Path(file_path).name  
+
+        # Validate format
+        pattern_file = r"^DataLog_\d{6}_(\d{6})"
+        match = re.match(pattern_file, filename)
+        if match:
+            time_part = match.group(1)
+            start_time_datalog = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"
+            #print(start_time_datalog)
+
         keep, keep2 = find_data(file_path)
         delimiter = auto_detect_delimiter(file_path)
+        
         pattern = re.compile(delimiter)  # Compila una volta la regex
-        with open(file_path, 'r') as f:
-            rows = [pattern.split(line.strip()) for line in f]
-           
-            data_to_save = [rows[i] for i in sorted(keep)]
-            df = pd.DataFrame(data_to_save)
-           
-            if len(keep2) != 0:
-           
-                # Read the file content into a variable
-                f.seek(0)
+        
+        print("File delimiter:", delimiter)
+        if match:
+            try:
+                print("is Datalog")
+                df = pd.read_csv(file_path, encoding='latin1', engine='python')
+
+                # Prepare the output filename.
+                output = 'output' + str(k) + '.csv'
+                print('Output filename prepared')
+                
+
+                # Write the resulting DataFrame to a CSV file without row indices or headers.
+                df.to_csv(output, index=False)
+                print(("File saved:", output))
+            except Exception as e:
+                print("An error occurred:", e)
+        else:
+            with open(file_path, 'r') as f:
                 rows = [pattern.split(line.strip()) for line in f]
-               
-                data_to_save = [rows[i] for i in sorted(keep2)]
-                df1 = pd.DataFrame(data_to_save)
-           
-                df = pd.concat([df, df1], axis=1)
-        output='output'+str(k)+'.csv'    
-        df.to_csv(output, index=False, header=False)
+            
+                data_to_save = [rows[i] for i in sorted(keep)]
+                df = pd.DataFrame(data_to_save)
+            
+                if len(keep2) != 0:
+            
+                    # Read the file content into a variable
+                    f.seek(0)
+                    rows = [pattern.split(line.strip()) for line in f]
+                
+                    data_to_save = [rows[i] for i in sorted(keep2)]
+                    df1 = pd.DataFrame(data_to_save)
+            
+                    df = pd.concat([df, df1], axis=1)
+            output='output'+str(k)+'.csv' 
+            
+            
+            df.to_csv(output, index=False, header=False)
            
     except Exception as e:
         root=tk.Tk()
