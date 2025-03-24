@@ -23,8 +23,8 @@ def show_main_window():
     ctk.set_appearance_mode('Dark')
     ctk.set_default_color_theme("dark-blue")
     
-    root = ctk.CTk()  # Creiamo la finestra principale
-    root.title("Test Data Analyzer 1.2V")
+    root = ctk.CTk()  #finestra principale
+    root.title("Test Data Analyzer 1.3V")
     
     # Dimensioni adattive per lo schermo
     main_width = 1200  
@@ -56,7 +56,7 @@ def main():
     splash = ctk.CTk()
     splash.title("Loading...")
     
-    # Dimensioni contenute per la splash screen
+    # Dimensioni per la splash screen
     splash_width = 400
     splash_height = 150
     screen_width = splash.winfo_screenwidth()
@@ -66,7 +66,6 @@ def main():
     splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
     splash.resizable(False, False)
     
-    # Uso di grid() invece di pack()
     splash.grid_rowconfigure(0, weight=1)
     splash.grid_columnconfigure(0, weight=1)
     
