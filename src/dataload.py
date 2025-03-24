@@ -366,7 +366,9 @@ def load_data(file_path, drop2, clicked2, file_list2, loading_label, root, entry
         if file_ext == 'csv':
             try:
                 print("is Datalog")
-                df = pd.read_csv(file_path, encoding='latin1', engine='python')
+                delimiter = auto_detect_delimiter(file_path)
+                print('Delimiter detected:', delimiter)
+                df = pd.read_csv(file_path, encoding='latin1', engine='python', sep=delimiter)
 
                 # Prepare the output filename.
                 output = 'output' + str(k) + '.csv'
