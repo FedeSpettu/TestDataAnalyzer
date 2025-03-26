@@ -17,6 +17,92 @@ from src.usefull_functions import apply_formulas_to_column, convert_to_relative_
 from datetime import datetime
 from matplotlib.text import Annotation  # For identifying annotation objects
 
+def formulas_to_column(df1, formula, df2=None):
+        """
+        Calcola una formula personalizzata utilizzando i valori delle colonne di uno o due dataframe.
+        Supporta funzioni matematiche senza il prefisso np.
+        
+        Args:
+            df1 (pandas.DataFrame): Il primo dataframe contenente i dati
+            formula (str): La formula da calcolare, contenente nomi di colonne
+            df2 (pandas.DataFrame, optional): Il secondo dataframe contenente dati aggiuntivi
+            
+        Returns:
+            pandas.Series: Una serie contenente i risultati del calcolo
+        """
+        import pandas as pd
+        import numpy as np
+        import re
+        
+        # Crea copie sicure dei dataframe
+        df1_copy = df1.copy()
+        
+        # Sostituisci le funzioni matematiche comuni senza il prefisso np.
+        # Lista delle funzioni matematiche da sostituire
+        math_functions = ['sin', 'cos', 'tan', 'exp', 'log', 'sqrt', 'abs']
+        
+        # Crea un pattern regex per trovare queste funzioni quando non sono precedute da "np."
+        pattern = r'(?<!np\.)\b(' + '|'.join(math_functions) + r')\('
+        
+        # Sostituisci ogni occorrenza con "np.funzione("
+        modified_formula = formula
+        for match in re.finditer(pattern, formula):
+            func_name = match.group(1)
+            start_pos = match.start()
+            end_pos = match.start() + len(func_name)
+            
+            # Verifica che non sia parte di un nome di colonna più lungo
+            if start_pos > 0 and formula[start_pos-1].isalnum():
+                continue
+                
+            # Sostituisci la funzione con np.funzione
+            modified_formula = modified_formula.replace(func_name + '(', 'np.' + func_name + '(', 1)
+        
+        # Trova tutti i nomi di colonne nella formula
+        column_names = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', modified_formula))
+        
+        # Parole chiave Python e funzioni matematiche da escludere dalla verifica delle colonne
+        excluded_words = ['and', 'or', 'not', 'True', 'False', 'if', 'else', 'for', 'in', 'return', 'None']
+        excluded_words.extend(['np'] + math_functions)
+        
+        # Crea un dizionario locale con le colonne del primo dataframe
+        local_dict = {}
+        
+        # Verifica le colonne nel primo dataframe
+        for col in column_names:
+            if col not in excluded_words:
+                if col in df1_copy.columns:
+                    local_dict[col] = df1_copy[col].values
+                elif df2 is not None and col in df2.columns:
+                    # Se la colonna è nel secondo dataframe, aggiungiamola al dizionario
+                    local_dict[col] = df2[col].values
+                else:
+                    raise ValueError(f"Colonna '{col}' non trovata in nessuno dei dataframe")
+        
+        # Aggiungi funzioni matematiche comuni
+        local_dict.update({
+            'np': np,
+            'sin': np.sin,
+            'cos': np.cos,
+            'tan': np.tan,
+            'exp': np.exp,
+            'log': np.log,
+            'sqrt': np.sqrt,
+            'abs': np.abs
+        })
+        
+        try:
+            # Valuta la formula utilizzando eval (sicuro perché limitato al dizionario locale)
+            result = eval(modified_formula, {"__builtins__": {}}, local_dict)
+            
+            # Converti il risultato in una Serie pandas
+            if isinstance(result, np.ndarray):
+                return pd.Series(result, index=df1_copy.index)
+            else:
+                return pd.Series([result] * len(df1_copy), index=df1_copy.index)
+        except Exception as e:
+            raise ValueError(f"Errore nel calcolo della formula: {str(e)}")
+
 def process_event(checkbox_event, df1, df2=None, options_file='options_event.txt', sec=None):
     if not checkbox_event:
         return df1, df2
@@ -89,7 +175,6 @@ class FastZoomToolbar2Tk(NavigationToolbar2Tk):
         
         self.zoom_out_button = tk.Button(self, text="Zoom Out", command=self._toggle_zoom_out)
         self.zoom_out_button.pack(side=tk.LEFT, padx=2, pady=2)
-        
         # Override home button functionality
         for text, tooltip_text, image_file, callback in self.toolitems:
             if text == 'Home':
@@ -426,7 +511,6 @@ class InteractivePlotApp(tk.Toplevel):
         self.tooltip_after_id = None
         self.tooltip_index = None
         self.tooltip_widget = None
-
         # Dictionary to keep track of annotations for lines (from pick events)
         self.line_annotations = {}
         # List to store manual annotations so they persist across replotting.
@@ -457,7 +541,6 @@ class InteractivePlotApp(tk.Toplevel):
         self.toolbar = FastZoomToolbar2Tk(self.canvas, left_frame)
         self.toolbar.update()
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
-
         # Create annotation for hover
         self.annot = self.ax.annotate("", xy=(0, 0), xytext=(10, 0),
                                        textcoords="offset points", ha="left", va="center",
@@ -517,15 +600,22 @@ class InteractivePlotApp(tk.Toplevel):
             self.color_btn_df2.pack(fill=tk.X, pady=2, padx=5)
         data_ops_frame = ttk.LabelFrame(right_frame, text="Data Operations")
         data_ops_frame.pack(fill=tk.X, pady=2, padx=5)
+
         self.diff_btn = ttk.Button(data_ops_frame, text="Plot Difference", command=self.plot_difference)
         self.diff_btn.pack(fill=tk.X, padx=5, pady=2)
+
+        self.custom_formula_btn = ttk.Button(data_ops_frame, text="Custom Formula", command=self.open_custom_formula_popup)
+        self.custom_formula_btn.pack(fill=tk.X, padx=5, pady=2)
+
         ma_frame = ttk.Frame(data_ops_frame)
         ma_frame.pack(fill=tk.X, padx=5, pady=2)
         ttk.Label(ma_frame, text="MA Window:").pack(side=tk.LEFT, padx=2)
         self.ma_entry = ttk.Entry(ma_frame, width=5)
         self.ma_entry.pack(side=tk.LEFT, padx=2)
+
         self.ma_btn = ttk.Button(data_ops_frame, text="Plot Moving Average", command=self.plot_moving_average)
         self.ma_btn.pack(fill=tk.X, padx=5, pady=2)
+
         self.ma_time_btn = ttk.Button(data_ops_frame, text="Plot MA (Time Window)", command=self.plot_moving_average_time)
         self.ma_time_btn.pack(fill=tk.X, padx=5, pady=2)
         # Threshold section
@@ -589,6 +679,156 @@ class InteractivePlotApp(tk.Toplevel):
         self.close_btn = ttk.Button(final_frame, text="Close", command=self.destroy)
         self.close_btn.pack(fill=tk.X, pady=2)
         self.plot_normal()
+
+    def open_custom_formula_popup(self):
+        popup = tk.Toplevel(self)
+        popup.title("Custom Formula")
+        popup.geometry("500x350")
+        
+        # Campo di inserimento della formula
+        tk.Label(popup, text="Enter custom formula:").pack(pady=5)
+        formula_entry = tk.Entry(popup, width=50)
+        formula_entry.pack(pady=5)
+        
+        # Aggiungi un selettore per scegliere il dataframe
+        df_frame = ttk.Frame(popup)
+        df_frame.pack(pady=5, fill=tk.X, padx=10)
+        
+        df_var = tk.StringVar(value="DataFrame 1")
+        df_label = tk.Label(df_frame, text="Select DataFrame:")
+        df_label.pack(side=tk.LEFT)
+        
+        # Crea radiobutton per selezionare il dataframe
+        df1_radio = tk.Radiobutton(df_frame, text="DataFrame 1", variable=df_var, value="DataFrame 1")
+        df1_radio.pack(side=tk.LEFT, padx=5)
+        
+        # Aggiungi il secondo radiobutton solo se df2 esiste
+        if hasattr(self, 'df2') and self.df2 is not None:
+            df2_radio = tk.Radiobutton(df_frame, text="DataFrame 2", variable=df_var, value="DataFrame 2")
+            df2_radio.pack(side=tk.LEFT, padx=5)
+        
+        # Frame per il filtro
+        filter_frame = ttk.Frame(popup)
+        filter_frame.pack(pady=5, fill=tk.X, padx=10)
+        
+        tk.Label(filter_frame, text="Filter Column:").pack(side=tk.LEFT)
+        filter_var = tk.StringVar()
+        filter_entry = ttk.Entry(filter_frame, textvariable=filter_var)
+        filter_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Elenco di colonne per df1: si escludono ad esempio il tempo (prima colonna) e "Event"
+        base_columns_df1 = [col for col in self.df1.columns if col not in [self.df1.columns[0], "Event"]]
+        
+        # Elenco di colonne per df2 (se esiste)
+        base_columns_df2 = []
+        if hasattr(self, 'df2') and self.df2 is not None:
+            base_columns_df2 = [col for col in self.df2.columns if col not in [self.df2.columns[0], "Event"]]
+        
+        # Inizializza con le colonne del df1
+        current_base_columns = base_columns_df1.copy()
+        filtered_columns = current_base_columns.copy()
+        
+        # Funzione per inserire la colonna selezionata nella formula
+        def insert_column(col_name):
+            if col_name != "No match":
+                current_text = formula_entry.get()
+                pos = formula_entry.index(tk.INSERT)
+                new_text = current_text[:pos] + col_name + current_text[pos:]
+                formula_entry.delete(0, tk.END)
+                formula_entry.insert(0, new_text)
+                # Posiziona il cursore dopo la colonna inserita
+                formula_entry.icursor(pos + len(col_name))
+                # Riporta il focus sull'entry della formula
+                formula_entry.focus_set()
+        
+        # Funzione per aggiornare il menu in base al dataframe selezionato e al filtro
+        def update_option_menu(*args):
+            # Determina quale dataframe è selezionato
+            if df_var.get() == "DataFrame 1":
+                current_base_columns = base_columns_df1.copy()
+            else:
+                current_base_columns = base_columns_df2.copy()
+            
+            # Applica il filtro
+            filter_text = filter_var.get().lower()
+            new_options = [col for col in current_base_columns if filter_text in col.lower()]
+            
+            if not new_options:
+                new_options = ["No match"]
+            
+            # Ricrea il menu con le nuove opzioni
+            menu = option_menu["menu"]
+            menu.delete(0, "end")
+            for col in new_options:
+                # Usa una lambda che chiama insert_column quando viene selezionata una voce
+                menu.add_command(label=col, command=lambda value=col: insert_column(value))
+        
+        # Crea l'OptionMenu con le colonne iniziali
+        selected_column_var = tk.StringVar()
+        if filtered_columns:
+            selected_column_var.set(filtered_columns[0])
+        else:
+            selected_column_var.set("")
+        
+        option_menu = ttk.OptionMenu(popup, selected_column_var, "", command=insert_column)
+        option_menu.pack(pady=5)
+        
+        # Aggiorna il menu iniziale
+        update_option_menu()
+        
+        # Traccia cambiamenti nel filtro e nella selezione del dataframe
+        filter_var.trace("w", update_option_menu)
+        df_var.trace("w", update_option_menu)
+        
+        # Aggiungi esempi di formula
+        examples_frame = ttk.Frame(popup)
+        examples_frame.pack(pady=5, fill=tk.X, padx=10)
+        tk.Label(examples_frame, text="Examples:").pack(anchor="w")
+        tk.Label(examples_frame, text="(column1 - column2) * column3").pack(anchor="w")
+        tk.Label(examples_frame, text="sin(column1) + sqrt(abs(column2))").pack(anchor="w")
+        
+        # Pulsante per eseguire il plot della formula
+        def on_plot():
+            formula = formula_entry.get().strip()
+            if not formula:
+                messagebox.showerror("Error", "La formula non può essere vuota.")
+                return
+            popup.destroy()
+            self.plot_custom_formula(formula)
+        
+        plot_btn = ttk.Button(popup, text="Plot Calculation", command=on_plot)
+        plot_btn.pack(pady=10)
+        
+        # Imposta il focus iniziale sul campo della formula
+        formula_entry.focus_set()
+
+
+    def plot_custom_formula(self, formula):
+        try:
+            # Utilizza la funzione helper apply_formulas_to_column, che ora accetta anche df2
+            if hasattr(self, 'df2') and self.df2 is not None:
+                computed = formulas_to_column(self.df1, formula, self.df2)
+            else:
+                computed = formulas_to_column(self.df1, formula)
+                
+            if computed is None:
+                messagebox.showerror("Error", "Errore nell'interpretazione della formula.")
+                return
+                
+            # Salva la serie calcolata
+            self.computed_series = computed
+            self.computed_label = f"Custom Formula: {formula}"
+            
+            # Imposta un flag per indicare che c'è una formula personalizzata da plottare
+            # ma non cambiare l'operazione corrente (data_operation)
+            self.has_custom_formula = True
+            
+            # Usa il sistema di plotting esistente
+            self.create_plot()
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to compute formula: {e}")
+
 
     def on_legend_click(self, event):
         if not self.legend_mapping:
@@ -1204,8 +1444,11 @@ class InteractivePlotApp(tk.Toplevel):
         ws = wb.active
         ws.title = "Plot"
         start_row = ws.max_row + 1 if ws["A1"].value is not None else 1
-        if self.data_operation in ['computed_difference', 'moving_average', 'moving_average_time']:
-            if self.data_operation == 'computed_difference' and self.computed_series is not None:
+        if self.data_operation in ['computed_difference', 'moving_average', 'moving_average_time', 'custom_formula']:
+            if self.data_operation == 'custom_formula' and self.computed_series is not None:
+                result_df = pd.DataFrame({self.time_column: self.df1[self.time_column],
+                                        self.computed_label: self.computed_series})
+            elif self.data_operation == 'computed_difference' and self.computed_series is not None:
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column], self.computed_label: self.computed_series})
             elif self.data_operation == 'moving_average':
                 result_df = pd.DataFrame({self.time_column: self.df1[self.time_column]})
@@ -1533,6 +1776,16 @@ class InteractivePlotApp(tk.Toplevel):
         confirm_button.pack(pady=10)
 
     def plot_normal(self):
+        
+        if hasattr(self, 'has_custom_formula') and self.has_custom_formula:
+            # Salva i dati della formula personalizzata se necessario
+            self.saved_formula_series = self.computed_series if hasattr(self, 'computed_series') else None
+            self.saved_formula_label = self.computed_label if hasattr(self, 'computed_label') else None
+            
+            # Resetta il flag ma mantieni i dati
+            self.has_custom_formula = False
+        
+        # Codice originale di plot_normal
         self.data_operation = 'normal'
         self.computed_series = None
         self.common_time = None
@@ -1548,6 +1801,7 @@ class InteractivePlotApp(tk.Toplevel):
             self.canvas.draw()
         else:
             self.create_plot()
+
 
     def create_plot(self):
         # --- Preserve manual annotations from pick events --- 
@@ -1579,7 +1833,24 @@ class InteractivePlotApp(tk.Toplevel):
                 color = "#%06x" % random.randint(0, 0xFFFFFF)
                 if color not in used_colors:
                     return color
+        
+        # Plotta la formula personalizzata se presente
+        if hasattr(self, 'has_custom_formula') and self.has_custom_formula and hasattr(self, 'computed_series') and self.computed_series is not None:
+            # Utilizza il tempo in secondi
+            t_sec = (self.df1_time - common_ref).dt.total_seconds().values
+            color = get_unique_color(used_colors, preferred='blue')
+            used_colors.add(color)
+            self.ax.plot(t_sec, self.computed_series, label=self.computed_label, color=color, picker=5)
+            self.xy_data.extend(list(zip(t_sec, self.computed_series)))
+        # Plotta la formula salvata se esiste (quando si aggiungono nuove colonne dopo una formula)
+        elif hasattr(self, 'saved_formula_series') and self.saved_formula_series is not None:
+            t_sec = (self.df1_time - common_ref).dt.total_seconds().values
+            color = get_unique_color(used_colors, preferred='blue')
+            used_colors.add(color)
+            self.ax.plot(t_sec, self.saved_formula_series, label=self.saved_formula_label, color=color, picker=5)
+            self.xy_data.extend(list(zip(t_sec, self.saved_formula_series)))
 
+                    
         if self.data_operation == 'computed_difference':
             if self.common_time is None or self.computed_series is None:
                 messagebox.showerror("Plot Difference", "No computed difference data available.")
@@ -1587,7 +1858,7 @@ class InteractivePlotApp(tk.Toplevel):
                 comp_color = get_unique_color(used_colors, preferred='purple')
                 used_colors.add(comp_color)
                 self.ax.plot(self.common_time, self.computed_series,
-                             label=self.computed_label, color=comp_color, picker=5)
+                            label=self.computed_label, color=comp_color, picker=5)
                 self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
             rem_df1 = [col for col in self.selected_df1_columns]
             for col in rem_df1:
@@ -1712,7 +1983,7 @@ class InteractivePlotApp(tk.Toplevel):
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
                     except Exception as e:
                         messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
-        else:
+        else:  # Caso normale o nessuna operazione specifica
             df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
             for col in df1_selected:
                 try:
@@ -1838,10 +2109,10 @@ class InteractivePlotApp(tk.Toplevel):
         
         for ann_data in saved_manual_annotations:
             ann = self.ax.annotate(ann_data['text'], xy=ann_data['xy'], xytext=ann_data['xytext'],
-                                   textcoords="offset points",
-                                   bbox=dict(boxstyle="round", fc="w"),
-                                   arrowprops=dict(arrowstyle="->"),
-                                   picker=True)
+                                textcoords="offset points",
+                                bbox=dict(boxstyle="round", fc="w"),
+                                arrowprops=dict(arrowstyle="->"),
+                                picker=True)
             self.manual_annotations.append(ann)
 
         if self.initialization_plot == False:
@@ -1851,7 +2122,8 @@ class InteractivePlotApp(tk.Toplevel):
         else:
             self.canvas.draw()
             #self.toolbar.store_original_limits()
-            self.firstplot = True    
+            self.firstplot = True
+
         
 
 def rapid_analysis(main_frame, checkbox_align, start_time1_entry, start_time2_entry, checkbox_event):
