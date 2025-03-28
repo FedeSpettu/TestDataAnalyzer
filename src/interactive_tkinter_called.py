@@ -885,11 +885,8 @@ class InteractivePlotApp(tk.Toplevel):
                 if label in self.plotted_custom_formula_columns:
                     self.plotted_custom_formula_columns.remove(label)
                 
-                # Aggiorna il grafico
-                self.create_plot()
-                
-                # Nascondi l'elemento
-                handle.set_visible(False)
+                # # Nascondi l'elemento
+                # handle.set_visible(False)
                 
                 # Gestisci la rimozione in base al tipo di elemento
                 if label.startswith("MA (") and hasattr(self, 'ma_columns'):
@@ -919,25 +916,39 @@ class InteractivePlotApp(tk.Toplevel):
                         self.saved_formula_label = None
                 
                 elif label.startswith("Threshold:"):
-                    # Per soglie, rimuovi solo quella specifica
+                    # For thresholds, remove only that specific one
                     threshold_value = float(label.split("Threshold:")[1].strip())
                     if threshold_value in self.thresholds:
                         self.thresholds.remove(threshold_value)
                 
                 elif label.startswith("Row") and "s):" in label:
-                    # Per eventi, rimuovi solo quello specifico
-                    # Estrai l'indice dell'evento dalla legenda
+                    # For events, remove only that specific one
+                    # Extract the event index from the legend
                     if "Row" in label:
-                        row_idx = int(label.split("Row")[1].split()[0].strip()) - 2
-                        for i, (idx, _) in enumerate(self.selected_events):
-                            if idx == row_idx:
-                                self.selected_events.pop(i)
-                                break
+                        try:
+                            row_idx = int(label.split("Row")[1].split()[0].strip()) - 2
+                            for i, (idx, ev_name) in enumerate(self.selected_events):
+                                if idx == row_idx:
+                                    self.selected_events.pop(i)
+                                    # Also remove from custom events if it was one
+                                    if (idx, ev_name) in self.custom_events:
+                                        self.custom_events.remove((idx, ev_name))
+                                    # Remove from custom event plot times if present
+                                    if idx in self.custom_event_plot_times:
+                                        del self.custom_event_plot_times[idx]
+                                    break
+                        except (ValueError, IndexError):
+                            pass
                 
                 # Rimuovi l'elemento dalla mappatura della legenda se esiste
                 if clicked_text in self.legend_mapping:
                     self.legend_mapping.pop(clicked_text)
                 
+                # Aggiorna il grafico
+                self.create_plot()
+                # Hide the element
+                handle.set_visible(False)
+
                 # Ricrea la legenda senza l'elemento rimosso
                 legend = self.ax.get_legend()
                 
