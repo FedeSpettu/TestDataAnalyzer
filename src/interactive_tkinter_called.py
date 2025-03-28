@@ -449,6 +449,9 @@ class MovingAveragePopup:
 
 
 class InteractivePlotApp(tk.Toplevel):
+    """
+    Applicazione interattiva per la visualizzazione e l'analisi di dati tramite grafici.
+    """
     def __init__(self, parent, df1, df2=None):
         super().__init__(parent)
         self.title("Interactive Plot")
@@ -485,6 +488,13 @@ class InteractivePlotApp(tk.Toplevel):
             self.df2_time = None
 
         self.colors_df1 = {}
+        
+        # Sistema di tracciamento delle colonne plottate
+        self.plotted_columns = []  # Lista di tutte le colonne attualmente plottate
+        self.plotted_columns_by_plot_selected = []  # Lista delle colonne plottate dal pulsante "Plot Selected"
+        self.plotted_difference_columns = []  # Lista delle colonne di differenza plottate
+        self.plotted_moving_average_columns = []  # Lista delle colonne di media mobile plottate
+        self.plotted_custom_formula_columns = []  # Lista delle colonne di formula personalizzata plottate
         self.colors_df2 = {}
         self.thresholds = []
         self.selected_events = []
@@ -804,6 +814,10 @@ class InteractivePlotApp(tk.Toplevel):
 
 
     def plot_custom_formula(self, formula):
+        """
+        Funzione per plottare una formula personalizzata.
+        Aggiunge la formula calcolata al grafico senza rimuovere le colonne già plottate.
+        """
         try:
             # Utilizza la funzione helper apply_formulas_to_column, che ora accetta anche df2
             if hasattr(self, 'df2') and self.df2 is not None:
@@ -823,6 +837,13 @@ class InteractivePlotApp(tk.Toplevel):
             # ma non cambiare l'operazione corrente (data_operation)
             self.has_custom_formula = True
             
+            # Aggiorna le liste di tracciamento
+            formula_col_name = self.computed_label
+            if formula_col_name not in self.plotted_columns:
+                self.plotted_columns.append(formula_col_name)
+            if formula_col_name not in self.plotted_custom_formula_columns:
+                self.plotted_custom_formula_columns.append(formula_col_name)
+            
             # Usa il sistema di plotting esistente
             self.create_plot()
                 
@@ -831,63 +852,128 @@ class InteractivePlotApp(tk.Toplevel):
 
 
     def on_legend_click(self, event):
-        if not self.legend_mapping:
-            return
-
-        renderer = self.fig.canvas.get_renderer()
-        to_remove = None  # Track which line needs removal
-
-        for text_obj, line_obj in self.legend_mapping.items():
-            bbox = text_obj.get_window_extent(renderer)
-            if bbox.contains(event.x, event.y) and event.dblclick:
-                label = text_obj.get_text()
+        """
+        Gestisce il clic sulla legenda per rimuovere elementi specifici dal grafico.
+        Aggiorna anche le liste di tracciamento quando un elemento viene rimosso.
+        """
+        if event.dblclick:  # Rimuovi solo su doppio clic
+            # Trova quale testo della legenda è stato cliccato
+            clicked_text = None
+            for text_obj in self.legend_mapping.keys():
+                # Verifica se il clic è avvenuto all'interno del bounding box del testo
+                bbox = text_obj.get_window_extent()
+                if bbox.contains(event.x, event.y):
+                    clicked_text = text_obj
+                    break
+            
+            if clicked_text:
+                handle = self.legend_mapping[clicked_text]
+                # Ottieni l'etichetta dell'elemento cliccato
+                label = clicked_text.get_text()
                 
-                # Remove computed difference if label starts with "Difference:"
-                if label.startswith("Difference:"):
-                    self.computed_series = None
-                    self.persist_diff = False
-                # For moving average lines
-                elif "MA (" in label or "MA Time" in label:
-                    if "DF1:" in label:
-                        col = label.split("DF1:")[1].strip()
-                        key = "DF1: " + col
-                        if key in self.ma_columns:
-                            self.ma_columns.remove(key)
-                    elif "DF2:" in label:
-                        col = label.split("DF2:")[1].strip()
-                        key = "DF2: " + col
-                        if key in self.ma_columns:
-                            self.ma_columns.remove(key)
-                else:
-                    # For normal lines
-                    if label.startswith("DF1:"):
-                        col = label.split("DF1:")[1].strip()
-                        if col in self.selected_df1_columns:
-                            self.selected_df1_columns.remove(col)
-                    elif label.startswith("DF2:"):
-                        col = label.split("DF2:")[1].strip()
-                        if col in self.selected_df2_columns:
-                            self.selected_df2_columns.remove(col)
-
-                # Mark the legend item for removal
-                to_remove = text_obj
-                break
-
-        if to_remove:
-            del self.legend_mapping[to_remove]  # Remove from mapping
-            if self.firstplot == True:
-                old_xlim = self.ax.get_xlim()
-                old_ylim = self.ax.get_ylim()
+                # Rimuovi l'elemento dalla lista principale di tracciamento
+                if label in self.plotted_columns:
+                    self.plotted_columns.remove(label)
+                
+                # Rimuovi anche dalle liste specifiche
+                if label in self.plotted_columns_by_plot_selected:
+                    self.plotted_columns_by_plot_selected.remove(label)
+                if label in self.plotted_difference_columns:
+                    self.plotted_difference_columns.remove(label)
+                if label in self.plotted_moving_average_columns:
+                    self.plotted_moving_average_columns.remove(label)
+                if label in self.plotted_custom_formula_columns:
+                    self.plotted_custom_formula_columns.remove(label)
+                
+                # Aggiorna il grafico
                 self.create_plot()
-                self.ax.set_xlim(old_xlim)
-                self.ax.set_ylim(old_ylim)
+                
+                # Nascondi l'elemento
+                handle.set_visible(False)
+                
+                # Gestisci la rimozione in base al tipo di elemento
+                if label.startswith("MA (") and hasattr(self, 'ma_columns'):
+                    # Per moving average standard, rimuovi solo quella specifica
+                    if "DF1:" in label:
+                        col_name = label.split("DF1:")[1].strip()
+                        self.ma_columns.discard(f"DF1: {col_name}")
+                    elif "DF2:" in label:
+                        col_name = label.split("DF2:")[1].strip()
+                        self.ma_columns.discard(f"DF2: {col_name}")
+                
+                elif label.startswith("MA Time (") and hasattr(self, 'ma_columns'):
+                    # Per moving average basata sul tempo, rimuovi solo quella specifica
+                    if "DF1:" in label:
+                        col_name = label.split("DF1:")[1].strip()
+                        self.ma_columns.discard(f"DF1: {col_name}")
+                    elif "DF2:" in label:
+                        col_name = label.split("DF2:")[1].strip()
+                        self.ma_columns.discard(f"DF2: {col_name}")
+                
+                elif label.startswith("Custom Formula:") and hasattr(self, 'has_custom_formula'):
+                    # Per formula personalizzata, disattiva solo quella
+                    if self.has_custom_formula:
+                        self.has_custom_formula = False
+                    elif hasattr(self, 'saved_formula_series') and self.saved_formula_series is not None:
+                        self.saved_formula_series = None
+                        self.saved_formula_label = None
+                
+                elif label.startswith("Threshold:"):
+                    # Per soglie, rimuovi solo quella specifica
+                    threshold_value = float(label.split("Threshold:")[1].strip())
+                    if threshold_value in self.thresholds:
+                        self.thresholds.remove(threshold_value)
+                
+                elif label.startswith("(") and "s):" in label:
+                    # Per eventi, rimuovi solo quello specifico
+                    # Estrai l'indice dell'evento dalla legenda
+                    if "Row" in label:
+                        row_idx = int(label.split("Row")[1].split()[0].strip()) - 2
+                        for i, (idx, _) in enumerate(self.selected_events):
+                            if idx == row_idx:
+                                self.selected_events.pop(i)
+                                break
+                
+                # Rimuovi l'elemento dalla mappatura della legenda se esiste
+                if clicked_text in self.legend_mapping:
+                    self.legend_mapping.pop(clicked_text)
+                
+                # Ricrea la legenda senza l'elemento rimosso
+                legend = self.ax.get_legend()
+                
+                # Verifica che la legenda esista prima di accedere ai suoi metodi
+                if legend is not None:
+                    # Filtra gli elementi visibili
+                    visible_handles = []
+                    visible_labels = []
+                    
+                    for h, t in zip(legend.get_lines(), legend.get_texts()):
+                        if h.get_visible() and t != clicked_text:
+                            visible_handles.append(h)
+                            visible_labels.append(t.get_text())
+                
+                    # Rimuovi la legenda esistente
+                    legend.remove()
+                    
+                    # Crea una nuova legenda con gli elementi rimanenti
+                    if visible_handles:
+                        # Determina il numero di colonne dinamicamente
+                        if len(visible_labels) <= 5:
+                            ncol = 1
+                        elif len(visible_labels) <= 10:
+                            ncol = 2
+                        else:
+                            ncol = 3
+                        
+                        leg = self.ax.legend(visible_handles, visible_labels, loc='upper left', bbox_to_anchor=(-0.05, -0.08),
+                                            ncol=ncol, columnspacing=2.0)
+                        
+                        # Aggiorna la mappatura della legenda
+                        self.legend_mapping = {text_obj: handle for text_obj, handle in zip(leg.get_texts(), visible_handles)}
+                
+                # Aggiorna il grafico
                 self.canvas.draw()
-            else:
-                self.create_plot() # Redraw plot after removing the line
 
-            # If legend is now empty, reset the view
-            if not self.legend_mapping:
-                self.reset_view()
 
 
 
@@ -1330,6 +1416,10 @@ class InteractivePlotApp(tk.Toplevel):
             return None, None
 
     def plot_difference(self):
+        """
+        Funzione per plottare la differenza tra due colonne selezionate.
+        Aggiunge la differenza calcolata al grafico senza rimuovere le colonne già plottate.
+        """
         first_sel, second_sel = self.choose_difference_columns()
         if not first_sel or not second_sel:
             self.data_operation = 'normal'
@@ -1358,35 +1448,35 @@ class InteractivePlotApp(tk.Toplevel):
         self.common_time = common_time
         self.computed_label = f"Difference: {src1}:{col1} - {src2}:{col2}"
         self.data_operation = 'computed_difference'
-        if src1 == "DF1":
-            self.selected_df1_columns.discard(col1)
-        else:
-            self.selected_df2_columns.discard(col1)
-        if src2 == "DF1":
-            self.selected_df1_columns.discard(col2)
-        else:
-            self.selected_df2_columns.discard(col2)
+        
+        # Aggiungi la colonna di differenza alla lista delle colonne plottate
+        diff_column_name = self.computed_label
+        if diff_column_name not in self.plotted_columns:
+            self.plotted_columns.append(diff_column_name)
+        
+        # Aggiungi alla lista delle colonne di differenza
+        if diff_column_name not in self.plotted_difference_columns:
+            self.plotted_difference_columns.append(diff_column_name)
+        
+        # Non rimuoviamo più le colonne originali dalla selezione
+        # Questo permette di mantenere le colonne originali nel grafico
         print('plot difference')
         print(self.firstplot)
-        if self.firstplot == True:
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
-        else:
-            self.create_plot()
+        # Rimuovi la conservazione dei limiti precedenti per permettere l'adattamento automatico
+        self.create_plot()
 
     # Modified moving average functions to open a popup for column selection.
     def plot_moving_average(self):
+        """
+        Funzione per plottare la media mobile delle colonne selezionate.
+        Aggiunge le medie mobili al grafico senza rimuovere le colonne già plottate.
+        """
         selections = []
         selections.extend(["DF1: " + col for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
             selections.extend(["DF2: " + col for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average", "Select at least one column for moving average.")
-            self.data_operation = 'normal'
             return
         try:
             window = int(self.ma_entry.get().strip())
@@ -1395,20 +1485,26 @@ class InteractivePlotApp(tk.Toplevel):
             self.ma_window = window
         except ValueError:
             messagebox.showerror("Moving Average", "Enter a valid positive integer for the window.")
-            self.data_operation = 'normal'
             return
-        self.data_operation = 'moving_average'
+        
+        # Invece di cambiare data_operation, imposta un flag
+        self.has_moving_average = True
+        self.ma_type = 'standard'
+        
         # Open the popup to select which columns to apply moving average to.
         MovingAveragePopup(self, selections, self.ma_popup_callback)
 
     def plot_moving_average_time(self):
+        """
+        Funzione per plottare la media mobile basata sul tempo delle colonne selezionate.
+        Aggiunge le medie mobili al grafico senza rimuovere le colonne già plottate.
+        """
         selections = []
         selections.extend(["DF1: " + col for col in self.selected_df1_columns])
         if self.df2_listbox is not None:
             selections.extend(["DF2: " + col for col in self.selected_df2_columns])
         if not selections:
             messagebox.showerror("Moving Average (Time)", "Select at least one column for moving average by time window.")
-            self.data_operation = 'normal'
             return
         try:
             window_sec = float(self.ma_entry.get().strip())
@@ -1417,23 +1513,37 @@ class InteractivePlotApp(tk.Toplevel):
             self.ma_window = window_sec
         except ValueError:
             messagebox.showerror("Moving Average (Time)", "Enter a valid positive number for the time window (in seconds).")
-            self.data_operation = 'normal'
             return
-        self.data_operation = 'moving_average_time'
+        
+        # Invece di cambiare data_operation, imposta un flag
+        self.has_moving_average = True
+        self.ma_type = 'time'
+        
         MovingAveragePopup(self, selections, self.ma_popup_callback)
 
     def ma_popup_callback(self, selected_columns):
-        # Callback from the MovingAveragePopup: store the selected columns and replot.
+        """
+        Callback dalla finestra MovingAveragePopup: memorizza le colonne selezionate,
+        aggiorna le liste di tracciamento e aggiorna il grafico.
+        """
+        # Memorizza le colonne selezionate per la media mobile
         self.ma_columns = set(selected_columns)
-        if self.firstplot == True:
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
-        else:
-            self.create_plot()
+        
+        # Aggiorna le liste di tracciamento per le medie mobili
+        ma_type_str = "Time" if self.ma_type == 'time' else "Standard"
+        window_str = f"{self.ma_window}s" if self.ma_type == 'time' else str(self.ma_window)
+        
+        # Aggiungi le nuove colonne di media mobile alla lista principale
+        for col_name in selected_columns:
+            ma_col_name = f"MA {ma_type_str} ({window_str}): {col_name}"
+            if ma_col_name not in self.plotted_columns:
+                self.plotted_columns.append(ma_col_name)
+            if ma_col_name not in self.plotted_moving_average_columns:
+                self.plotted_moving_average_columns.append(ma_col_name)
+        
+        # Aggiorna il grafico
+        # Rimuovi la conservazione dei limiti precedenti per permettere l'adattamento automatico
+        self.create_plot()
 
     def save_plot_to_excel(self):
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
@@ -1774,36 +1884,66 @@ class InteractivePlotApp(tk.Toplevel):
                 buf.close()
         confirm_button = ttk.Button(confirm_frame, text="Confirm", command=on_confirm)
         confirm_button.pack(pady=10)
+    
+    def reset_moving_average(self):
+        # Metodo per resettare le moving average quando necessario
+        if hasattr(self, 'has_moving_average'):
+            self.has_moving_average = False
+        if hasattr(self, 'ma_columns'):
+            self.ma_columns = set()
+        if hasattr(self, 'ma_type'):
+            self.ma_type = None
+        self.create_plot()
+
 
     def plot_normal(self):
-        
-        if hasattr(self, 'has_custom_formula') and self.has_custom_formula:
-            # Salva i dati della formula personalizzata se necessario
-            self.saved_formula_series = self.computed_series if hasattr(self, 'computed_series') else None
-            self.saved_formula_label = self.computed_label if hasattr(self, 'computed_label') else None
-            
-            # Resetta il flag ma mantieni i dati
-            self.has_custom_formula = False
-        
-        # Codice originale di plot_normal
+        """
+        Funzione per plottare le colonne selezionate nelle listbox.
+        Mantiene le colonne già plottate da altre funzioni e aggiorna solo quelle
+        gestite dal pulsante "Plot Selected".
+        """
         self.data_operation = 'normal'
-        self.computed_series = None
-        self.common_time = None
-        self.ma_window = None
+        
+        # Ottieni le colonne attualmente selezionate
+        current_selected_columns = []
+        for col in self.df1.columns:
+            if col in self.selected_df1_columns:
+                current_selected_columns.append(f"DF1: {col}")
+        
+        if self.df2 is not None:
+            for col in self.df2.columns:
+                if col in self.selected_df2_columns:
+                    current_selected_columns.append(f"DF2: {col}")
+        
+        # Determina quali colonne rimuovere (quelle che erano nella lista precedente ma non in quella attuale)
+        columns_to_remove = [col for col in self.plotted_columns_by_plot_selected if col not in current_selected_columns]
+        
+        # Rimuovi le colonne che non sono più selezionate dalla lista principale
+        for col in columns_to_remove:
+            if col in self.plotted_columns:
+                self.plotted_columns.remove(col)
+        
+        # Aggiorna la lista delle colonne plottate dal pulsante "Plot Selected"
+        self.plotted_columns_by_plot_selected = current_selected_columns.copy()
+        
+        # Aggiungi le nuove colonne selezionate alla lista principale se non ci sono già
+        for col in current_selected_columns:
+            if col not in self.plotted_columns:
+                self.plotted_columns.append(col)
+        
         print('plot_normal')
         print(self.firstplot)
-        if self.firstplot == True:
-            old_xlim = self.ax.get_xlim()
-            old_ylim = self.ax.get_ylim()
-            self.create_plot()
-            self.ax.set_xlim(old_xlim)
-            self.ax.set_ylim(old_ylim)
-            self.canvas.draw()
-        else:
-            self.create_plot()
+        # Rimuovi la conservazione dei limiti precedenti per permettere l'adattamento automatico
+        self.create_plot()
+
 
 
     def create_plot(self):
+        """
+        Funzione centrale per creare il grafico.
+        Utilizza le liste di tracciamento per determinare quali colonne plottare.
+        Adatta automaticamente i limiti del grafico e resetta la vista se non ci sono colonne.
+        """
         # --- Preserve manual annotations from pick events --- 
         saved_manual_annotations = []
         for ann in self.manual_annotations:
@@ -1816,6 +1956,12 @@ class InteractivePlotApp(tk.Toplevel):
         self.ax.clear()
         self.event_line_labels = {}
         self.xy_data = []
+        
+        # Verifica se non ci sono colonne plottate e in tal caso esegui un reset della vista
+        if not self.plotted_columns:
+            self.reset_view()
+            return
+            
         common_ref = self.get_common_reference()
         
         # Set up used colors tracking
@@ -1834,197 +1980,165 @@ class InteractivePlotApp(tk.Toplevel):
                 if color not in used_colors:
                     return color
         
-        # Plotta la formula personalizzata se presente
+        # Plotta la formula personalizzata se presente nella lista di tracciamento
         if hasattr(self, 'has_custom_formula') and self.has_custom_formula and hasattr(self, 'computed_series') and self.computed_series is not None:
-            # Utilizza il tempo in secondi
             t_sec = (self.df1_time - common_ref).dt.total_seconds().values
             color = get_unique_color(used_colors, preferred='blue')
             used_colors.add(color)
             self.ax.plot(t_sec, self.computed_series, label=self.computed_label, color=color, picker=5)
             self.xy_data.extend(list(zip(t_sec, self.computed_series)))
-        # Plotta la formula salvata se esiste (quando si aggiungono nuove colonne dopo una formula)
+        # Plotta la formula salvata se esiste
         elif hasattr(self, 'saved_formula_series') and self.saved_formula_series is not None:
             t_sec = (self.df1_time - common_ref).dt.total_seconds().values
             color = get_unique_color(used_colors, preferred='blue')
             used_colors.add(color)
             self.ax.plot(t_sec, self.saved_formula_series, label=self.saved_formula_label, color=color, picker=5)
             self.xy_data.extend(list(zip(t_sec, self.saved_formula_series)))
-
-                    
-        if self.data_operation == 'computed_difference':
-            if self.common_time is None or self.computed_series is None:
-                messagebox.showerror("Plot Difference", "No computed difference data available.")
-            else:
-                comp_color = get_unique_color(used_colors, preferred='purple')
-                used_colors.add(comp_color)
-                self.ax.plot(self.common_time, self.computed_series,
-                            label=self.computed_label, color=comp_color, picker=5)
-                self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
-            rem_df1 = [col for col in self.selected_df1_columns]
-            for col in rem_df1:
+        
+        # Plotta la differenza calcolata se presente nella lista di tracciamento
+        if self.data_operation == 'computed_difference' and hasattr(self, 'computed_series') and self.computed_series is not None:
+            comp_color = get_unique_color(used_colors, preferred='purple')
+            used_colors.add(comp_color)
+            self.ax.plot(self.common_time, self.computed_series,
+                        label=self.computed_label, color=comp_color, picker=5)
+            self.xy_data.extend(list(zip(self.common_time, self.computed_series)))
+        
+        # Plotta le colonne normali di DF1 che sono nella lista di tracciamento
+        df1_columns_to_plot = []
+        for col in self.df1.columns:
+            col_name = f"DF1: {col}"
+            if col_name in self.plotted_columns:
+                df1_columns_to_plot.append(col)
+        
+        for col in df1_columns_to_plot:
+            try:
+                t = self.df1_time
+                t_sec = (t - common_ref).dt.total_seconds().values
+                y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                y_vals = np.nan_to_num(y_vals, nan=0.0)
+                candidate = self.colors_df1.get(col)
+                if candidate is None or candidate in used_colors:
+                    candidate = get_unique_color(used_colors)
+                    self.colors_df1[col] = candidate
+                used_colors.add(candidate)
+                self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=candidate, picker=5)
+                self.xy_data.extend(list(zip(t_sec, y_vals)))
+            except Exception as e:
+                messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
+                continue
+        
+        # Plotta le colonne normali di DF2 che sono nella lista di tracciamento
+        if self.df2 is not None:
+            df2_columns_to_plot = []
+            for col in self.df2.columns:
+                col_name = f"DF2: {col}"
+                if col_name in self.plotted_columns:
+                    df2_columns_to_plot.append(col)
+            
+            for col in df2_columns_to_plot:
                 try:
-                    t = self.df1_time
+                    t = self.df2_time
                     t_sec = (t - common_ref).dt.total_seconds().values
-                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
+                    y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
                     y_vals = np.nan_to_num(y_vals, nan=0.0)
-                    candidate = self.colors_df1.get(col)
+                    candidate = self.colors_df2.get(col)
                     if candidate is None or candidate in used_colors:
                         candidate = get_unique_color(used_colors)
-                        self.colors_df1[col] = candidate
+                        self.colors_df2[col] = candidate
                     used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=candidate, picker=5)
+                    self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=candidate, picker=5)
                     self.xy_data.extend(list(zip(t_sec, y_vals)))
                 except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
+                    messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
                     continue
-            if self.df2 is not None:
-                rem_df2 = [col for col in self.selected_df2_columns]
-                for col in rem_df2:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
-                        y_vals = np.nan_to_num(y_vals, nan=0.0)
-                        candidate = self.colors_df2.get(col)
-                        if candidate is None or candidate in used_colors:
-                            candidate = get_unique_color(used_colors)
-                            self.colors_df2[col] = candidate
-                        used_colors.add(candidate)
-                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=candidate, picker=5)
-                        self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
-                        continue
-        elif self.data_operation == 'moving_average':
-            # For DF1 columns: if the column is in the moving average selection, compute MA; otherwise, plot normally.
-            for col in self.selected_df1_columns:
-                try:
-                    t = self.df1_time
-                    t_sec = (t - common_ref).dt.total_seconds().values
+        
+        # Plotta le moving average che sono nella lista di tracciamento
+        if hasattr(self, 'has_moving_average') and self.has_moving_average and hasattr(self, 'ma_columns') and self.ma_columns:
+            # Ottieni le colonne di DF1 e DF2 che hanno una media mobile
+            ma_df1_columns = []
+            ma_df2_columns = []
+            
+            for col_name in self.plotted_moving_average_columns:
+                if "DF1:" in col_name and col_name.split("DF1:")[1].strip() in self.df1.columns:
+                    col = col_name.split("DF1:")[1].strip()
                     if f"DF1: {col}" in self.ma_columns:
+                        ma_df1_columns.append(col)
+                elif "DF2:" in col_name and self.df2 is not None and col_name.split("DF2:")[1].strip() in self.df2.columns:
+                    col = col_name.split("DF2:")[1].strip()
+                    if f"DF2: {col}" in self.ma_columns:
+                        ma_df2_columns.append(col)
+            
+            if hasattr(self, 'ma_type') and self.ma_type == 'standard':
+                # Moving average standard
+                for col in ma_df1_columns:
+                    try:
+                        t = self.df1_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
                         y_vals = pd.to_numeric(self.df1[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
                         label = f"MA ({self.ma_window}): DF1:{col}"
-                    else:
-                        y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
-                        label = f"DF1: {col}"
-                    candidate = self.colors_df1.get(col)
-                    if candidate is None or candidate in used_colors:
                         candidate = get_unique_color(used_colors)
-                        self.colors_df1[col] = candidate
-                    used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
-                    self.xy_data.extend(list(zip(t_sec, y_vals)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
-            if self.df2 is not None:
-                for col in self.selected_df2_columns:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        if f"DF2: {col}" in self.ma_columns:
-                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
-                            label = f"MA ({self.ma_window}): DF2:{col}"
-                        else:
-                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
-                            label = f"DF2: {col}"
-                        candidate = self.colors_df2.get(col)
-                        if candidate is None or candidate in used_colors:
-                            candidate = get_unique_color(used_colors)
-                            self.colors_df2[col] = candidate
                         used_colors.add(candidate)
                         self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
                     except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
-        elif self.data_operation == 'moving_average_time':
-            # For DF1 columns in time-based moving average mode.
-            for col in self.selected_df1_columns:
-                try:
-                    t = self.df1_time
-                    t_sec = (t - common_ref).dt.total_seconds().values
-                    if f"DF1: {col}" in self.ma_columns:
+                        messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF1) could not be plotted: {e}")
+                
+                if self.df2 is not None:
+                    for col in ma_df2_columns:
+                        try:
+                            t = self.df2_time
+                            t_sec = (t - common_ref).dt.total_seconds().values
+                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').rolling(self.ma_window, min_periods=1).mean().values
+                            label = f"MA ({self.ma_window}): DF2:{col}"
+                            candidate = get_unique_color(used_colors)
+                            used_colors.add(candidate)
+                            self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
+                            self.xy_data.extend(list(zip(t_sec, y_vals)))
+                        except Exception as e:
+                            messagebox.showerror("Plot Error", f"Moving average for column '{col}' (DF2) could not be plotted: {e}")
+            
+            elif hasattr(self, 'ma_type') and self.ma_type == 'time':
+                # Moving average basata sul tempo
+                for col in ma_df1_columns:
+                    try:
+                        t = self.df1_time
+                        t_sec = (t - common_ref).dt.total_seconds().values
                         series = pd.to_numeric(self.df1[col], errors='coerce')
                         series.index = t
                         window_str = f"{self.ma_window}s"
                         y_vals = series.rolling(window=window_str, min_periods=1).mean().values
                         label = f"MA Time ({self.ma_window}s): DF1:{col}"
-                    else:
-                        y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
-                        label = f"DF1: {col}"
-                    candidate = self.colors_df1.get(col)
-                    if candidate is None or candidate in used_colors:
                         candidate = get_unique_color(used_colors)
-                        self.colors_df1[col] = candidate
-                    used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
-                    self.xy_data.extend(list(zip(t_sec, y_vals)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
-            if self.df2 is not None:
-                for col in self.selected_df2_columns:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        if f"DF2: {col}" in self.ma_columns:
-                            series = pd.to_numeric(self.df2[col], errors='coerce')
-                            series.index = t
-                            window_str = f"{self.ma_window}s"
-                            y_vals = series.rolling(window=window_str, min_periods=1).mean().values
-                            label = f"MA Time ({self.ma_window}s): DF2:{col}"
-                        else:
-                            y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
-                            label = f"DF2: {col}"
-                        candidate = self.colors_df2.get(col)
-                        if candidate is None or candidate in used_colors:
-                            candidate = get_unique_color(used_colors)
-                            self.colors_df2[col] = candidate
                         used_colors.add(candidate)
                         self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
                         self.xy_data.extend(list(zip(t_sec, y_vals)))
                     except Exception as e:
-                        messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
-        else:  # Caso normale o nessuna operazione specifica
-            df1_selected = [col for col in self.df1.columns if col in self.selected_df1_columns]
-            for col in df1_selected:
-                try:
-                    t = self.df1_time
-                    t_sec = (t - common_ref).dt.total_seconds().values
-                    y_vals = pd.to_numeric(self.df1[col], errors='coerce').values
-                    y_vals = np.nan_to_num(y_vals, nan=0.0)
-                    candidate = self.colors_df1.get(col)
-                    if candidate is None or candidate in used_colors:
-                        candidate = get_unique_color(used_colors)
-                        self.colors_df1[col] = candidate
-                    used_colors.add(candidate)
-                    self.ax.plot(t_sec, y_vals, label=f"DF1: {col}", color=candidate, picker=5)
-                    self.xy_data.extend(list(zip(t_sec, y_vals)))
-                except Exception as e:
-                    messagebox.showerror("Plot Error", f"Column '{col}' (DF1) could not be plotted: {e}")
-                    continue
-            if self.df2 is not None:
-                df2_selected = [col for col in self.df2.columns if col in self.selected_df2_columns]
-                for col in df2_selected:
-                    try:
-                        t = self.df2_time
-                        t_sec = (t - common_ref).dt.total_seconds().values
-                        y_vals = pd.to_numeric(self.df2[col], errors='coerce').values
-                        y_vals = np.nan_to_num(y_vals, nan=0.0)
-                        candidate = self.colors_df2.get(col)
-                        if candidate is None or candidate in used_colors:
-                            candidate = get_unique_color(used_colors)
-                            self.colors_df2[col] = candidate
-                        used_colors.add(candidate)
-                        self.ax.plot(t_sec, y_vals, label=f"DF2: {col}", color=candidate, picker=5)
-                        self.xy_data.extend(list(zip(t_sec, y_vals)))
-                    except Exception as e:
-                        messagebox.showerror("Plot Error", f"Column '{col}' (DF2) could not be plotted: {e}")
-                        continue
-
+                        messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF1) failed: {e}")
+                
+                if self.df2 is not None:
+                    for col in ma_df2_columns:
+                            try:
+                                t = self.df2_time
+                                t_sec = (t - common_ref).dt.total_seconds().values
+                                series = pd.to_numeric(self.df2[col], errors='coerce')
+                                series.index = t
+                                window_str = f"{self.ma_window}s"
+                                y_vals = series.rolling(window=window_str, min_periods=1).mean().values
+                                label = f"MA Time ({self.ma_window}s): DF2:{col}"
+                                candidate = get_unique_color(used_colors)
+                                used_colors.add(candidate)
+                                self.ax.plot(t_sec, y_vals, label=label, color=candidate, picker=5)
+                                self.xy_data.extend(list(zip(t_sec, y_vals)))
+                            except Exception as e:
+                                messagebox.showerror("Plot Error", f"Time-based moving average for column '{col}' (DF2) failed: {e}")
+        
+        # Plotta le soglie
         for thr in self.thresholds:
             thr_color = get_unique_color(used_colors, preferred='red')
             used_colors.add(thr_color)
             self.ax.axhline(y=thr, color=thr_color, linestyle='dashed', label=f"Threshold: {thr}", picker=5)
 
+        # Plotta gli eventi
         if "Event" in self.df1.columns and self.selected_events:
             for event_info in self.selected_events:
                 row_idx, ev_name = event_info
@@ -2044,6 +2158,8 @@ class InteractivePlotApp(tk.Toplevel):
                 self.event_lines.append((line, full_label))
                 self.xy_data.append((ev_sec, 0))
                 self.event_line_labels[line] = short_label
+        
+        # Il resto della funzione rimane invariato
         handles, labels = self.ax.get_legend_handles_labels()
 
         # Ensure event lines keep their full label
@@ -2115,14 +2231,31 @@ class InteractivePlotApp(tk.Toplevel):
                                 picker=True)
             self.manual_annotations.append(ann)
 
+        # Adatta automaticamente i limiti del grafico se ci sono dati
+        if self.xy_data:
+            # Estrai tutti i valori x e y dai dati plottati
+            x_values = [x for x, y in self.xy_data]
+            y_values = [y for x, y in self.xy_data]
+            
+            if x_values and y_values:
+                # Calcola i limiti con un margine del 5%
+                x_min, x_max = min(x_values), max(x_values)
+                y_min, y_max = min(y_values), max(y_values)
+                
+                x_margin = (x_max - x_min) * 0.05
+                y_margin = (y_max - y_min) * 0.05
+                
+                # Imposta i nuovi limiti con margine
+                self.ax.set_xlim(x_min - x_margin, x_max + x_margin)
+                self.ax.set_ylim(y_min - y_margin, y_max + y_margin)
+
         if self.initialization_plot == False:
             self.canvas.draw()
-            #self.toolbar.store_original_limits()
             self.initialization_plot = True
         else:
             self.canvas.draw()
-            #self.toolbar.store_original_limits()
             self.firstplot = True
+
 
         
 
