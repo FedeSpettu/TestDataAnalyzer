@@ -924,7 +924,7 @@ class InteractivePlotApp(tk.Toplevel):
                     if threshold_value in self.thresholds:
                         self.thresholds.remove(threshold_value)
                 
-                elif label.startswith("(") and "s):" in label:
+                elif label.startswith("Row") and "s):" in label:
                     # Per eventi, rimuovi solo quello specifico
                     # Estrai l'indice dell'evento dalla legenda
                     if "Row" in label:
@@ -973,9 +973,6 @@ class InteractivePlotApp(tk.Toplevel):
                 
                 # Aggiorna il grafico
                 self.canvas.draw()
-
-
-
 
     def format_event(self, event_tuple):
         row_idx, ev_name = event_tuple
